@@ -124,7 +124,16 @@ En lugar de depender de "skills" inyectados externamente, debes revisar y aplica
 ## 7. Estilo y convenciones técnicas
 
 * TypeScript estricto (`strict: true`), sin `any` salvo justificación explícita en comentario.
-* Cambios al esquema de datos solo vía migraciones de Prisma (`npx prisma migrate dev`), nunca editando la DB a mano.
+* **Migraciones:** InsForge no expone conexión TCP directa. No uses `npx prisma migrate dev`. En su lugar:
+  - Crea archivos `.sql` en `migrations/` con timestamp
+  - Aplica con `npx @insforge/cli db query --file migrations/<file>.sql`
+  - No uses Prisma migrate, Drizzle Kit, o cualquier herramienta que requiera conexión directa
+* **Prisma 7 (client engine):** No usa `url` en schema.prisma. La conexión va en `prisma/prisma.config.ts` con `defineConfig` de `@prisma/config`. El `PrismaClient` requiere `@prisma/adapter-pg` + `PrismaPg`:
+  ```ts
+  import { PrismaPg } from '@prisma/adapter-pg'
+  import { PrismaClient } from '@prisma/client'
+  new PrismaClient({ adapter: new PrismaPg({ connectionString: DATABASE_URL }) })
+  ```
 * Tailwind + tokens del sistema de diseño de `FRONTEND_PATTERNS.md` — **nunca** colores hex hardcodeados en componentes (`bg-[#8127cf]`); usa siempre las clases semánticas (`bg-primary`, `text-foreground`, etc.).
 * Server Actions con nombre verbo-sustantivo (`createOrder`, `syncMoodleUser`), nunca genéricos (`handleSubmit`, `doStuff`).
 * Toda credencial de servicio externo vive en variables de entorno *server-only* — si necesitas usarla en un componente cliente, es una señal de que el diseño está mal y hay que pararse a repensarlo, no a exponer la variable.

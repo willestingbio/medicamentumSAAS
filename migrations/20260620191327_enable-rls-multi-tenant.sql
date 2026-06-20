@@ -179,7 +179,6 @@ CREATE POLICY "cart_items_update" ON public.cart_items
 CREATE POLICY "calendar_events_select" ON public.calendar_events
   FOR SELECT USING (
     "userId" = auth.uid()::text OR
-    (SELECT "organizationId" FROM public.users WHERE id = "userId") = public.get_user_org_id() OR
     (SELECT role FROM public.users WHERE id = auth.uid()::text) = 'super_admin'::"Role"
   );
 

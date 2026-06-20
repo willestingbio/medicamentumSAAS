@@ -7,33 +7,6 @@ import 'vanilla-cookieconsent/dist/cookieconsent.css';
 export function CookieConsentBanner() {
   useEffect(() => {
     CookieConsent.run({
-      guessLanguage: false,
-      language: 'es',
-      onFirstConsent: () => {
-        console.log('[CookieConsent] User gave first consent');
-      },
-      onChange: () => {
-        console.log('[CookieConsent] User preferences changed');
-      },
-      onConsent: () => {
-        console.log('[CookieConsent] Consent management updated');
-      },
-      categories: {
-        necessary: {
-          enabled: true,
-          readOnly: true,
-        },
-        analytics: {
-          enabled: false,
-        },
-      },
-      consentModal: {
-        layout: 'cloud',
-        position: 'bottom-right',
-        equalWeightButtons: false,
-        flipButtons: false,
-      },
-      transitionGroup: 'show',
       language: {
         default: 'es',
         autoDetect: 'document',
@@ -72,6 +45,23 @@ export function CookieConsentBanner() {
               ],
             },
           },
+        },
+      },
+      categories: {
+        necessary: {
+          enabled: true,
+          readOnly: true,
+        },
+        analytics: {
+          enabled: false,
+        },
+      },
+      guiOptions: {
+        consentModal: {
+          layout: 'cloud',
+          position: 'bottom right',
+          equalWeightButtons: false,
+          flipButtons: false,
         },
       },
     });

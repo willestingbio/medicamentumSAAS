@@ -1,10 +1,7 @@
-import { defineConfig } from '@prisma/internals';
-import { withAccelerate } from '@prisma/extension-accelerate';
+import { defineConfig } from '@prisma/config';
 
 export default defineConfig({
-  datasources: {
-    db: {
-      url: process.env.DATABASE_URL,
-    },
+  datasource: {
+    url: process.env.DATABASE_URL,
   },
 });

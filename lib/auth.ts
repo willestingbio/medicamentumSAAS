@@ -24,10 +24,8 @@ export const auth = betterAuth({
     provider: 'postgresql',
   }),
 
-  // Email + contraseña
   emailAndPassword: {
     enabled: true,
-    autoSignInAfterSignUp: true,
   },
 
   // Google OAuth
@@ -80,47 +78,39 @@ export const auth = betterAuth({
     },
   },
 
-  // Hooks para validación y lógica personalizada
   hooks: {
-    before: [
-      {
-        // Validar antes de sign-up
-        matcher: (ctx) => ctx.path === '/sign-up' && ctx.method === 'POST',
-        handler: async (ctx) => {
-          // Validaciones adicionales si son necesarias
-          // Ej: verificar si el email pertenece a un dominio hospitalario
-        },
-      },
-    ],
-    after: [
-      {
-        // Post sign-up: crear cuenta espejo en Moodle
-        matcher: (ctx) => ctx.path === '/sign-up' && ctx.method === 'POST',
-        handler: async (ctx) => {
-          if (!ctx.context.user?.email || !ctx.context.user?.name) return;
-          try {
-            const { createMoodleUser } = await import('./moodle/client');
-            const nameParts = ctx.context.user.name.split(' ');
-            const moodleUserId = await createMoodleUser({
-              username: ctx.context.user.email.split('@')[0],
-              email: ctx.context.user.email,
-              firstname: nameParts[0] || ctx.context.user.name,
-              lastname: nameParts.slice(1).join(' ') || '.',
-              password: crypto.randomUUID().slice(0, 12) + '!Aa1',
+    before: async () => {
+      // Validaciones antes de sign-up
+    },
+    after: async (ctx: any) => {
+      if (ctx.path === '/sign-up' && ctx.method === 'POST') {
+        if (!ctx.context.user?.email || !ctx.context.user?.name) return;
+        try {
+          const { createMoodleUser } = await import('./moodle/client');
+          const nameParts = ctx.context.user.name.trim().split(' ');
+          const firstname = nameParts[0] || ctx.context.user.name;
+          const lastname = nameParts.length > 1
+            ? nameParts.slice(1).join(' ')
+            : firstname;
+          const moodleUserId = await createMoodleUser({
+            username: ctx.context.user.email.split('@')[0],
+            email: ctx.context.user.email,
+            firstname,
+            lastname,
+            password: crypto.randomUUID().slice(0, 12) + '!Aa1',
+          });
+          if (moodleUserId) {
+            const { prisma } = await import('./prisma');
+            await prisma.user.update({
+              where: { id: ctx.context.user.id },
+              data: { moodleUserId },
             });
-            if (moodleUserId) {
-              const { prisma } = await import('./prisma');
-              await prisma.user.update({
-                where: { id: ctx.context.user.id },
-                data: { moodleUserId },
-              });
-            }
-          } catch (e) {
-            console.warn('[Auth Hook] Moodle user creation skipped:', e instanceof Error ? e.message : e);
           }
-        },
-      },
-    ],
+        } catch (e) {
+          console.warn('[Auth Hook] Moodle user creation skipped:', e instanceof Error ? e.message : e);
+        }
+      }
+    },
   },
 
   // Configuración avanzada de seguridad (Fase 8)

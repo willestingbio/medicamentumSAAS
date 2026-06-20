@@ -17,6 +17,8 @@ docker/output/
 out/
 dist/
 build/
+next-env.d.ts
+tsconfig.tsbuildinfo
 
 # IDE
 .vscode/*

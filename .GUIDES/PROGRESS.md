@@ -7,47 +7,57 @@ Actualizado: 2026-06-20
 ## Fase 1 — Fundaciones
 - [x] Setup Next.js App Router + Prisma + InsForge Postgres
   - Next.js 15, React 19, TypeScript strict
-  - Prisma 7.8 configurado
-  - PostCSS + Tailwind CSS v4 con tokens de color (#8127cf)
-- [x] Schema + migraciones SQL
-  - 13 modelos creados en InsForge PostgreSQL via migraciones
-  - Migraciones: `create-medicamentum-schema` + `enable-rls-multi-tenant`
+  - Prisma 7.8 con adapter-pg + PrismaPg
+  - PostCSS + Tailwind CSS v4 + @tailwindcss/postcss
+  - vanilla-cookieconsent v3.x con guiOptions
+- [x] Schema + migraciones SQL (vía InsForge CLI, no Prisma migrate)
+  - 13 modelos creados en InsForge PostgreSQL
+  - Migraciones: `create-medicamentum-schema`, `enable-rls-multi-tenant`, `fix-calendar-events-rls`
 - [x] RLS multi-tenant activado (29 policies en 11 tablas)
-  - Organizaciones, usuarios, productos, órdenes, enrollments, etc.
-  - Helper function: `public.get_user_org_id()`
+  - CalendarEvent estricto userId-only (sin hospital_admin por TRD.md §4)
+  - Helper: `public.get_user_org_id()`
   - Grants para authenticated + anon
-- [x] Better Auth: email+password + Google OAuth, roles
-  - `lib/auth.ts` configurado con hook post sign-up para cuenta Moodle
+- [x] Better Auth 1.6.20: email+password + Google OAuth (placeholders)
+  - `lib/auth.ts` configurado con hook after post sign-up para Moodle
+  - `lib/auth-client.ts` para cliente React
 - [x] Cuenta espejo automática en Moodle
-  - Hook en auth.ts llama a `createMoodleUser()` post sign-up
+  - Hook after en auth.ts llama a `createMoodleUser()` post sign-up
   - Actualiza `moodleUserId` en BD
+  - Name parsing robusto (soporta single-word names)
+- [x] Sanitización de logs (AGENTS.md §5)
+  - console.error sanitizado en moodle/client.ts
+  - console.log de params removido
 - [x] Banner de cookies + política de privacidad (Ley 1581)
+  - Páginas `/privacidad` y `/terminos` creadas
 - [x] Variables de entorno
   - `.env.local` con DATABASE_URL, BETTER_AUTH_SECRET, MOODLE_WS_TOKEN
-  - `.env.local.example` documentado
+  - Placeholders para GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, WOMPI_*
 - [x] Moodle local de pruebas (Docker)
-  - Moodle 4.0.5 corriendo en `http://localhost:8090`
+  - Moodle 4.0.5 (jhardison/moodle) corriendo en `http://localhost:8090`
   - API REST habilitada con token: 91c2cc395d7065e7986950998ee4045a
   - Curso demo: M360-DEMO-001 (id=2)
   - Estudiante demo: estudiante_demo / EstudianteDemo123!
   - Bootstrap completo: webservices, token, curso, usuario de prueba
-  - (Moodle depende de Docker Desktop en WSL2)
+- [x] Build verificado: `npm run build` compila sin errores
+- [x] RLS isolation test SQL creado (`tests/rls-isolation-test.sql`)
+  - Pendiente: ejecutar con autenticación real (no CLI) para confirmar
 
 **Estado: Fase 1 COMPLETA! ✅**
 
-**Próximos pasos (Fase 2):**
-1. Landing page + navegación principal
-2. Sistema de diseño base (navbar, footer, layouts)
-3. Páginas de autenticación (sign-in, sign-up)
-4. Integración de Better Auth client en UI
+**Desviaciones conocidas (vs TRD.md / AGENTS.md):**
+1. Moodle local: jhardison/moodle en lugar de bitnami/moodle (Bitnami retiró imágenes de Docker Hub)
+2. Migraciones: SQL directo vía InsForge CLI en lugar de `npx prisma migrate dev` (InsForge no expone conexión TCP directa)
+3. Prisma 7: requiere @prisma/adapter-pg + PrismaPg para conexión, no usa url en schema.prisma
+4. Better Auth hooks: API de funciones en lugar de `{ matcher, handler }` en v1.6.20
+5. vanilla-cookieconsent: guiOptions para layout/position en v3.x
 
-**Próximos pasos en Fase 1:**
-1. Investigar schema previo en InsForge (tablas existentes: hospital, license, product, session, user, account, verification)
-2. Resolver conflicto de tipos y migrar schema correctamente a público
-3. Aplicar migraciones RLS
-4. Test de aislamiento RLS cross-org (bloqueante antes de Fase 4)
-5. Implementar Server Action para crear cuenta Moodle post sign-up
-6. (Docker) Levantar Moodle local si Docker Desktop está disponible
+**Próximos pasos (Fase 2):**
+1. Obtener credenciales reales de Google OAuth y Wompi
+2. Ejecutar RLS isolation test como usuario autenticado
+3. Landing page + navegación principal
+4. Sistema de diseño base (navbar, footer, layouts)
+5. Páginas de autenticación (sign-in, sign-up) con UI
+6. Integración de Better Auth client en componentes
 
 ## Fase 2 — Landing y navegación
 - [ ] No iniciada

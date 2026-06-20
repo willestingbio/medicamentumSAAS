@@ -32,12 +32,6 @@ interface MoodleUserData {
   auth?: string;
 }
 
-interface MoodleEnrollmentData {
-  roleid: number;
-  userid: number;
-  courseid: number;
-}
-
 /**
  * Hacer una llamada a la API REST de Moodle.
  * 
@@ -71,7 +65,7 @@ async function callMoodleAPI(
     }
   });
 
-  console.log(`[Moodle] Calling ${wsfunction}`, params);
+  console.log(`[Moodle] Calling ${wsfunction}`);
 
   const response = await fetch(url.toString(), {
     method: 'POST',
@@ -122,7 +116,7 @@ export async function createMoodleUser(userData: MoodleUserData): Promise<number
 
     return moodleUserId;
   } catch (error) {
-    console.error('[Moodle] Error creating user:', error);
+    console.error(`[Moodle] Error creating user: ${error instanceof Error ? error.message : 'unknown'}`);
     throw error;
   }
 }
@@ -142,7 +136,7 @@ export async function getMoodleUserByEmail(email: string): Promise<any> {
 
     return result && result.length > 0 ? result[0] : null;
   } catch (error) {
-    console.error('[Moodle] Error getting user:', error);
+    console.error('[Moodle] Error getting user:', error instanceof Error ? error.message : 'unknown');
     throw error;
   }
 }
@@ -173,18 +167,11 @@ export async function enrollUserInCourse(
       `[Moodle] User ${moodleUserId} enrolled in course ${moodleCourseId}`
     );
   } catch (error) {
-    console.error('[Moodle] Error enrolling user:', error);
+    console.error('[Moodle] Error enrolling user:', error instanceof Error ? error.message : 'unknown');
     throw error;
   }
 }
 
-/**
- * Obtener estado de finalización de un curso para un usuario.
- * 
- * @param moodleUserId - ID del usuario
- * @param moodleCourseId - ID del curso
- * @returns Datos de progreso/finalización
- */
 export async function getCourseCompletion(
   moodleUserId: number,
   moodleCourseId: number
@@ -194,21 +181,13 @@ export async function getCourseCompletion(
       courseid: moodleCourseId,
       userid: moodleUserId,
     });
-
     return result;
   } catch (error) {
-    console.error('[Moodle] Error getting course completion:', error);
+    console.error('[Moodle] Error getting course completion:', error instanceof Error ? error.message : 'unknown');
     throw error;
   }
 }
 
-/**
- * Obtener calificaciones de un usuario en un curso.
- * 
- * @param moodleUserId - ID del usuario
- * @param moodleCourseId - ID del curso
- * @returns Array de calificaciones
- */
 export async function getCourseGrades(
   moodleUserId: number,
   moodleCourseId: number
@@ -218,48 +197,34 @@ export async function getCourseGrades(
       courseid: moodleCourseId,
       userids: moodleUserId,
     });
-
     return result;
   } catch (error) {
-    console.error('[Moodle] Error getting grades:', error);
+    console.error('[Moodle] Error getting grades:', error instanceof Error ? error.message : 'unknown');
     throw error;
   }
 }
 
-/**
- * Obtener lista de cursos disponibles.
- * (Opcional: implementar caché en fase posterior)
- */
 export async function getCourses(): Promise<any> {
   try {
     const result = await callMoodleAPI('core_course_get_courses');
     return result;
   } catch (error) {
-    console.error('[Moodle] Error getting courses:', error);
+    console.error('[Moodle] Error getting courses:', error instanceof Error ? error.message : 'unknown');
     throw error;
   }
 }
 
-/**
- * Obtener URL de autologin (SSO Modo 2).
- * Requiere plugin `auth_userkey` instalado en Moodle.
- * 
- * @param moodleUserId - ID del usuario
- * @returns URL de autologin o error si el plugin no está instalado
- */
 export async function getAutologinUrl(moodleUserId: number): Promise<string> {
   try {
     const result = await callMoodleAPI('auth_userkey_request_login_url', {
       userid: moodleUserId,
     });
-
     if (result && result.loginurl) {
       return result.loginurl;
     }
-
     throw new Error('Autologin URL not returned');
   } catch (error) {
-    console.error('[Moodle] Error getting autologin URL (plugin might not be installed):', error);
+    console.error('[Moodle] Error getting autologin URL:', error instanceof Error ? error.message : 'unknown');
     throw error;
   }
 }

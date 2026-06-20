@@ -27,10 +27,6 @@ import { createAuthClient } from 'better-auth/react';
 export const authClient = createAuthClient({
   baseURL: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
   basePath: '/api/auth',
-  fetchOptions: {
-    // Revalidate session every 5 minutes
-    revalidateTags: ['auth'],
-  },
 });
 
 // Export hooks para conveniencia
