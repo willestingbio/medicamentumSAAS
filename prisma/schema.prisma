@@ -1,0 +1,213 @@
+// prisma/schema.prisma
+// Medicamentum360 — Modelo de datos SAAS multi-tenant
+// TRD.md §3, BACKEND.md §3
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ===== Enums =====
+
+enum Role {
+  super_admin
+  hospital_admin
+  student
+}
+
+enum ProductType {
+  course
+  vr_experience
+  ai_automation
+}
+
+enum OrderStatus {
+  pending
+  paid
+  failed
+  refunded
+}
+
+// ===== Models =====
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  nit       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users  User[]
+  orders Order[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String        @id @default(cuid())
+  email          String        @unique
+  name           String
+  lastName       String
+  role           Role          @default(student)
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  moodleUserId   Int?          @unique
+  profilePicUrl  String?
+  specialty      String?
+  locale         String        @default("es")
+  theme          String        @default("system")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  enrollments Enrollment[]
+  orders      Order[]
+  cartItems   CartItem[]
+  certificates Certificate[]
+  reviews     Review[]
+  calendarEvents CalendarEvent[]
+
+  @@map("users")
+}
+
+model Product {
+  id             String      @id @default(cuid())
+  type           ProductType
+  title          String
+  slug           String      @unique
+  description    String
+  priceCents     Int
+  discountCents  Int?
+  coverImageUrl  String?
+  moodleCourseId Int?
+  vrAssetUrl     String?
+  capacity       Int?
+  published      Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  enrollments Enrollment[]
+  orderItems  OrderItem[]
+  reviews     Review[]
+
+  @@map("products")
+}
+
+model Enrollment {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  progressPct   Int      @default(0)
+  status        String   @default("not_started")
+  moodleEnrolId Int?
+  lastAccessedAt DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, productId])
+  @@map("enrollments")
+}
+
+model Cart {
+  id         String     @id @default(cuid())
+  userId     String?    @unique
+  guestToken String?    @unique
+  items      CartItem[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        String  @id @default(cuid())
+  cartId    String
+  cart      Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String
+  quantity  Int     @default(1)
+  userId    String?
+  user      User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("cart_items")
+}
+
+model Order {
+  id                 String      @id @default(cuid())
+  userId             String
+  user               User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId     String?
+  organization       Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  status             OrderStatus @default(pending)
+  subtotalCents      Int
+  taxCents           Int
+  totalCents         Int
+  billingDocType     String
+  billingDocId       String
+  wompiTransactionId String?     @unique
+  items              OrderItem[]
+  createdAt          DateTime    @default(now())
+  paidAt             DateTime?
+  updatedAt          DateTime    @updatedAt
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  priceCents Int
+  quantity  Int     @default(1)
+  createdAt DateTime @default(now())
+
+  @@map("order_items")
+}
+
+model Certificate {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId   String
+  pdfUrl      String
+  issuedAt    DateTime @default(now())
+  linkedinUrl String?
+  createdAt   DateTime @default(now())
+
+  @@map("certificates")
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("reviews")
+}
+
+model CalendarEvent {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title         String
+  startsAt      DateTime
+  endsAt        DateTime?
+  googleEventId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("calendar_events")
+}

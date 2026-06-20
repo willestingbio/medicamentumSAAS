@@ -1,0 +1,39 @@
+{
+  "name": "medicamentumSAAS",
+  "version": "1.0.0",
+  "description": "Medicamentum360 — Plataforma SAAS educativa para hospitales",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio"
+  },
+  "dependencies": {
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "@prisma/client": "^7.8.0",
+    "better-auth": "^1.6.20",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.21.0",
+    "tailwind-merge": "^3.6.0",
+    "vanilla-cookieconsent": "^3.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.5.3",
+    "prisma": "^7.8.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^4.1.0",
+    "@tailwindcss/forms": "^0.5.0",
+    "@tailwindcss/typography": "^0.5.0",
+    "tailwindcss-animate": "^1.0.0",
+    "autoprefixer": "^10.4.0"
+  },
+  "private": true
+}
