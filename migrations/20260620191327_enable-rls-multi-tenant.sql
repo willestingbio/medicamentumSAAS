@@ -1,207 +1,195 @@
+-- Migración: Habilitar RLS multi-tenant en todas las tablas
+-- TRD.md §4: Aislamiento de datos cross-organization
+-- Fecha: 2026-06-20
 
+-- ===== ENABLE RLS ON ALL TABLES =====
+ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.order_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.certificates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.carts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cart_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.calendar_events ENABLE ROW LEVEL SECURITY;
 
 -- ===== HELPER FUNCTION: Get current user's organization ID =====
--- Reads from JWT claim 'organization_id' set by Better Auth
-CREATE OR REPLACE FUNCTION auth.get_org_id() RETURNS TEXT AS $$
+CREATE OR REPLACE FUNCTION public.get_user_org_id() RETURNS TEXT AS $$
   SELECT COALESCE(
     (auth.jwt() ->> 'organization_id')::text,
-    (SELECT organization_id FROM public.users WHERE id = auth.uid() LIMIT 1)
+    (SELECT "organizationId" FROM public.users WHERE id = auth.uid()::text LIMIT 1)
   );
 $$ LANGUAGE SQL STABLE SECURITY DEFINER;
 
 -- ===== POLICY: ORGANIZATIONS =====
--- - super_admin: reads/writes all orgs
--- - hospital_admin/student: reads own org only
 CREATE POLICY "organizations_select_own_org" ON public.organizations
   FOR SELECT USING (
-    id = auth.get_org_id() OR 
-    (SELECT role FROM public.users WHERE id = auth.uid()) = 'super_admin'::"Role"
+    id = public.get_user_org_id() OR 
+    (SELECT role FROM public.users WHERE id = auth.uid()::text) = 'super_admin'::"Role"
   );
 
 CREATE POLICY "organizations_update_own_org" ON public.organizations
   FOR UPDATE USING (
-    (SELECT role FROM public.users WHERE id = auth.uid()) = 'super_admin'::"Role"
+    (SELECT role FROM public.users WHERE id = auth.uid()::text) = 'super_admin'::"Role"
   );
 
 CREATE POLICY "organizations_insert_super_admin_only" ON public.organizations
   FOR INSERT WITH CHECK (
-    (SELECT role FROM public.users WHERE id = auth.uid()) = 'super_admin'::"Role"
+    (SELECT role FROM public.users WHERE id = auth.uid()::text) = 'super_admin'::"Role"
   );
 
 -- ===== POLICY: USERS =====
--- - Each user can read/update themselves
--- - hospital_admin can read all users in their org
--- - super_admin can read all users everywhere
-CREATE POLICY "users_select_own_user" ON public.users
+CREATE POLICY "users_select_own_or_org" ON public.users
   FOR SELECT USING (
-    id = auth.uid() OR
-    organization_id = auth.get_org_id() OR
-    (SELECT role FROM public.users WHERE id = auth.uid()) = 'super_admin'::"Role"
+    id = auth.uid()::text OR
+    "organizationId" = public.get_user_org_id() OR
+    (SELECT role FROM public.users WHERE id = auth.uid()::text) = 'super_admin'::"Role"
   );
 
-CREATE POLICY "users_update_own_user" ON public.users
-  FOR UPDATE USING (id = auth.uid())
-  WITH CHECK (id = auth.uid());
+CREATE POLICY "users_update_own" ON public.users
+  FOR UPDATE USING (id = auth.uid()::text)
+  WITH CHECK (id = auth.uid()::text);
 
 CREATE POLICY "users_insert_own_org" ON public.users
   FOR INSERT WITH CHECK (
-    organization_id = auth.get_org_id() OR
-    (SELECT role FROM public.users WHERE id = auth.uid()) = 'super_admin'::"Role"
+    "organizationId" = public.get_user_org_id() OR
+    (SELECT role FROM public.users WHERE id = auth.uid()::text) = 'super_admin'::"Role"
   );
 
 -- ===== POLICY: PRODUCTS =====
--- - Everyone can read published products
--- - super_admin can read/write all products
 CREATE POLICY "products_select_published" ON public.products
   FOR SELECT USING (
     published = true OR
-    (SELECT role FROM public.users WHERE id = auth.uid()) = 'super_admin'::"Role"
+    (SELECT role FROM public.users WHERE id = auth.uid()::text) = 'super_admin'::"Role"
   );
 
-CREATE POLICY "products_insert_update_super_admin_only" ON public.products
+CREATE POLICY "products_write_super_admin_only" ON public.products
   FOR INSERT WITH CHECK (
-    (SELECT role FROM public.users WHERE id = auth.uid()) = 'super_admin'::"Role"
+    (SELECT role FROM public.users WHERE id = auth.uid()::text) = 'super_admin'::"Role"
   );
 
 CREATE POLICY "products_update_super_admin_only" ON public.products
   FOR UPDATE USING (
-    (SELECT role FROM public.users WHERE id = auth.uid()) = 'super_admin'::"Role"
+    (SELECT role FROM public.users WHERE id = auth.uid()::text) = 'super_admin'::"Role"
   );
 
 CREATE POLICY "products_delete_super_admin_only" ON public.products
   FOR DELETE USING (
-    (SELECT role FROM public.users WHERE id = auth.uid()) = 'super_admin'::"Role"
+    (SELECT role FROM public.users WHERE id = auth.uid()::text) = 'super_admin'::"Role"
   );
 
 -- ===== POLICY: ENROLLMENTS =====
--- - Users can read their own enrollments
--- - hospital_admin can read all enrollments in their org
--- - super_admin can read all enrollments
--- - Users can create enrollments for themselves only
 CREATE POLICY "enrollments_select" ON public.enrollments
   FOR SELECT USING (
-    user_id = auth.uid() OR
-    (SELECT organization_id FROM public.users WHERE id = user_id) = auth.get_org_id() OR
-    (SELECT role FROM public.users WHERE id = auth.uid()) = 'super_admin'::"Role"
+    "userId" = auth.uid()::text OR
+    (SELECT "organizationId" FROM public.users WHERE id = "userId") = public.get_user_org_id() OR
+    (SELECT role FROM public.users WHERE id = auth.uid()::text) = 'super_admin'::"Role"
   );
 
-CREATE POLICY "enrollments_insert_own_user" ON public.enrollments
+CREATE POLICY "enrollments_insert_own" ON public.enrollments
   FOR INSERT WITH CHECK (
-    user_id = auth.uid() AND
-    (SELECT organization_id FROM public.users WHERE id = auth.uid()) = auth.get_org_id()
+    "userId" = auth.uid()::text AND
+    (SELECT "organizationId" FROM public.users WHERE id = auth.uid()::text) = public.get_user_org_id()
   );
 
-CREATE POLICY "enrollments_update_own_user" ON public.enrollments
+CREATE POLICY "enrollments_update_own_or_admin" ON public.enrollments
   FOR UPDATE USING (
-    user_id = auth.uid() OR
-    (SELECT role FROM public.users WHERE id = auth.uid()) = 'super_admin'::"Role"
+    "userId" = auth.uid()::text OR
+    (SELECT role FROM public.users WHERE id = auth.uid()::text) = 'super_admin'::"Role" OR
+    (SELECT role FROM public.users WHERE id = auth.uid()::text) = 'hospital_admin'::"Role"
   );
 
 -- ===== POLICY: ORDERS =====
--- - Users can read their own orders
--- - hospital_admin can read orders from users in their org
--- - super_admin can read all orders
--- - Orders must belong to the user's organization
 CREATE POLICY "orders_select" ON public.orders
   FOR SELECT USING (
-    user_id = auth.uid() OR
-    organization_id = auth.get_org_id() OR
-    (SELECT role FROM public.users WHERE id = auth.uid()) = 'super_admin'::"Role"
+    "userId" = auth.uid()::text OR
+    "organizationId" = public.get_user_org_id() OR
+    (SELECT role FROM public.users WHERE id = auth.uid()::text) = 'super_admin'::"Role"
   );
 
 CREATE POLICY "orders_insert" ON public.orders
   FOR INSERT WITH CHECK (
-    user_id = auth.uid() AND
-    organization_id = auth.get_org_id()
+    "userId" = auth.uid()::text AND
+    "organizationId" = public.get_user_org_id()
   );
 
-CREATE POLICY "orders_update_own_user" ON public.orders
+CREATE POLICY "orders_update" ON public.orders
   FOR UPDATE USING (
-    user_id = auth.uid() OR
-    (SELECT role FROM public.users WHERE id = auth.uid() LIMIT 1) IN ('super_admin', 'hospital_admin')::"Role"
+    "userId" = auth.uid()::text OR
+    (SELECT role FROM public.users WHERE id = auth.uid()::text) = 'super_admin'::"Role" OR
+    (SELECT role FROM public.users WHERE id = auth.uid()::text) = 'hospital_admin'::"Role"
   );
 
 -- ===== POLICY: ORDER_ITEMS =====
--- - Users can read order items from their orders only
--- - hospital_admin can read order items from orders in their org
 CREATE POLICY "order_items_select" ON public.order_items
   FOR SELECT USING (
-    (SELECT user_id FROM public.orders WHERE id = order_id) = auth.uid() OR
-    (SELECT organization_id FROM public.orders WHERE id = order_id) = auth.get_org_id() OR
-    (SELECT role FROM public.users WHERE id = auth.uid()) = 'super_admin'::"Role"
+    (SELECT "userId" FROM public.orders WHERE id = "orderId") = auth.uid()::text OR
+    (SELECT "organizationId" FROM public.orders WHERE id = "orderId") = public.get_user_org_id() OR
+    (SELECT role FROM public.users WHERE id = auth.uid()::text) = 'super_admin'::"Role"
   );
 
 -- ===== POLICY: CERTIFICATES =====
--- - Users can read their own certificates only
--- - hospital_admin can read certificates from users in their org
--- - super_admin can read all certificates
 CREATE POLICY "certificates_select" ON public.certificates
   FOR SELECT USING (
-    user_id = auth.uid() OR
-    (SELECT organization_id FROM public.users WHERE id = user_id) = auth.get_org_id() OR
-    (SELECT role FROM public.users WHERE id = auth.uid()) = 'super_admin'::"Role"
+    "userId" = auth.uid()::text OR
+    (SELECT "organizationId" FROM public.users WHERE id = "userId") = public.get_user_org_id() OR
+    (SELECT role FROM public.users WHERE id = auth.uid()::text) = 'super_admin'::"Role"
   );
 
 -- ===== POLICY: REVIEWS =====
--- - Everyone can read reviews
--- - Users can create/update their own reviews only
-CREATE POLICY "reviews_select" ON public.reviews
+CREATE POLICY "reviews_select_all" ON public.reviews
   FOR SELECT USING (true);
 
-CREATE POLICY "reviews_insert_own_review" ON public.reviews
-  FOR INSERT WITH CHECK (user_id = auth.uid());
+CREATE POLICY "reviews_insert_own" ON public.reviews
+  FOR INSERT WITH CHECK ("userId" = auth.uid()::text);
 
-CREATE POLICY "reviews_update_own_review" ON public.reviews
-  FOR UPDATE USING (user_id = auth.uid())
-  WITH CHECK (user_id = auth.uid());
+CREATE POLICY "reviews_update_own" ON public.reviews
+  FOR UPDATE USING ("userId" = auth.uid()::text)
+  WITH CHECK ("userId" = auth.uid()::text);
 
 -- ===== POLICY: CARTS =====
--- - Users can read/update their own cart
-CREATE POLICY "carts_select_own_cart" ON public.carts
-  FOR SELECT USING (user_id = auth.uid() OR guest_token IS NOT NULL);
+CREATE POLICY "carts_select" ON public.carts
+  FOR SELECT USING ("userId" = auth.uid()::text OR "guestToken" IS NOT NULL);
 
-CREATE POLICY "carts_update_own_cart" ON public.carts
-  FOR UPDATE USING (user_id = auth.uid());
+CREATE POLICY "carts_update" ON public.carts
+  FOR UPDATE USING ("userId" = auth.uid()::text);
 
 -- ===== POLICY: CART_ITEMS =====
--- - Users can read/write items in their own cart
-CREATE POLICY "cart_items_select_own_cart" ON public.cart_items
+CREATE POLICY "cart_items_select" ON public.cart_items
   FOR SELECT USING (
-    (SELECT user_id FROM public.carts WHERE id = cart_id) = auth.uid() OR
-    user_id = auth.uid()
+    "userId" = auth.uid()::text OR
+    (SELECT "userId" FROM public.carts WHERE id = "cartId") = auth.uid()::text
   );
 
-CREATE POLICY "cart_items_insert_own_cart" ON public.cart_items
+CREATE POLICY "cart_items_insert" ON public.cart_items
   FOR INSERT WITH CHECK (
-    user_id = auth.uid() OR
-    (SELECT user_id FROM public.carts WHERE id = cart_id) = auth.uid()
+    "userId" = auth.uid()::text OR
+    (SELECT "userId" FROM public.carts WHERE id = "cartId") = auth.uid()::text
   );
 
-CREATE POLICY "cart_items_update_own_cart" ON public.cart_items
+CREATE POLICY "cart_items_update" ON public.cart_items
   FOR UPDATE USING (
-    user_id = auth.uid() OR
-    (SELECT user_id FROM public.carts WHERE id = cart_id) = auth.uid()
+    "userId" = auth.uid()::text OR
+    (SELECT "userId" FROM public.carts WHERE id = "cartId") = auth.uid()::text
   );
 
 -- ===== POLICY: CALENDAR_EVENTS =====
--- - Users can read their own calendar events
--- - hospital_admin can read events from users in their org
--- - super_admin can read all events
 CREATE POLICY "calendar_events_select" ON public.calendar_events
   FOR SELECT USING (
-    user_id = auth.uid() OR
-    (SELECT organization_id FROM public.users WHERE id = user_id) = auth.get_org_id() OR
-    (SELECT role FROM public.users WHERE id = auth.uid()) = 'super_admin'::"Role"
+    "userId" = auth.uid()::text OR
+    (SELECT "organizationId" FROM public.users WHERE id = "userId") = public.get_user_org_id() OR
+    (SELECT role FROM public.users WHERE id = auth.uid()::text) = 'super_admin'::"Role"
   );
 
-CREATE POLICY "calendar_events_insert_own_user" ON public.calendar_events
-  FOR INSERT WITH CHECK (user_id = auth.uid());
+CREATE POLICY "calendar_events_insert_own" ON public.calendar_events
+  FOR INSERT WITH CHECK ("userId" = auth.uid()::text);
 
-CREATE POLICY "calendar_events_update_own_user" ON public.calendar_events
-  FOR UPDATE USING (user_id = auth.uid())
-  WITH CHECK (user_id = auth.uid());
+CREATE POLICY "calendar_events_update_own" ON public.calendar_events
+  FOR UPDATE USING ("userId" = auth.uid()::text)
+  WITH CHECK ("userId" = auth.uid()::text);
 
 -- ===== SET DEFAULT GRANTS =====
--- Ensure runtime role has access (policies decide row-level access)
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;

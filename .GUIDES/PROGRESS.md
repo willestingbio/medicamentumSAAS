@@ -7,33 +7,39 @@ Actualizado: 2026-06-20
 ## Fase 1 — Fundaciones
 - [x] Setup Next.js App Router + Prisma + InsForge Postgres
   - Next.js 15, React 19, TypeScript strict
-  - Prisma 7.8 configurado (esquema sin url en schema.prisma, config en prisma.config.ts)
+  - Prisma 7.8 configurado
   - PostCSS + Tailwind CSS v4 con tokens de color (#8127cf)
-- [x] `schema.prisma` inicial + migraciones SQL
-  - 13 modelos completos: Organization, User, Product, Enrollment, Cart, CartItem, Order, OrderItem, Certificate, Review, CalendarEvent
-  - Relaciones multi-tenant con `organizationId`
-  - Migraciones SQL creadas: `20260620190500_create-medicamentum-schema.sql` + `20260620191327_enable-rls-multi-tenant.sql`
-  - **En progreso:** Aplicar migraciones a InsForge (schema parcialmente existe, tipos en conflicto)
-- [ ] RLS activado en todas las tablas
-  - Políticas SQL implementadas para 11 tablas (organizations, users, products, enrollments, orders, etc.)
-  - **Bloqueante de aplicación:** Conflicto de tipos existentes en DB, necesita investigación de esquema previo
+- [x] Schema + migraciones SQL
+  - 13 modelos creados en InsForge PostgreSQL via migraciones
+  - Migraciones: `create-medicamentum-schema` + `enable-rls-multi-tenant`
+- [x] RLS multi-tenant activado (29 policies en 11 tablas)
+  - Organizaciones, usuarios, productos, órdenes, enrollments, etc.
+  - Helper function: `public.get_user_org_id()`
+  - Grants para authenticated + anon
 - [x] Better Auth: email+password + Google OAuth, roles
-  - `lib/auth.ts` configurado con email+password
-  - Google OAuth ready (requiere GOOGLE_CLIENT_ID/SECRET en .env)
-  - User model con campos `role`, `organizationId`, `moodleUserId`, `specialty`, `locale`, `theme`
-  - Hooks de post sign-up para Moodle integration
-- [ ] Cuenta espejo automática en Moodle
-  - `lib/moodle/client.ts` implementado con `createMoodleUser()` + 11 funciones de API
-  - **Pendiente:** Disparar desde Server Action post sign-up
+  - `lib/auth.ts` configurado con hook post sign-up para cuenta Moodle
+- [x] Cuenta espejo automática en Moodle
+  - Hook en auth.ts llama a `createMoodleUser()` post sign-up
+  - Actualiza `moodleUserId` en BD
 - [x] Banner de cookies + política de privacidad (Ley 1581)
-  - `vanilla-cookieconsent` v3 integrado
-  - Componente `CookieConsentBanner` con config ES
-- [x] Variables de entorno y secretos
-  - `.env.local` creado con placeholders + DATABASE_URL válida para InsForge
-  - `.gitignore` actualizado para proteger secretos
-- [ ] Moodle local de pruebas (Docker)
-  - **Bloqueante:** Docker no disponible en entorno WSL sin Docker Desktop integration
-  - docker-compose.yml listo en `.GUIDES/`
+- [x] Variables de entorno
+  - `.env.local` con DATABASE_URL, BETTER_AUTH_SECRET, MOODLE_WS_TOKEN
+  - `.env.local.example` documentado
+- [x] Moodle local de pruebas (Docker)
+  - Moodle 4.0.5 corriendo en `http://localhost:8090`
+  - API REST habilitada con token: 91c2cc395d7065e7986950998ee4045a
+  - Curso demo: M360-DEMO-001 (id=2)
+  - Estudiante demo: estudiante_demo / EstudianteDemo123!
+  - Bootstrap completo: webservices, token, curso, usuario de prueba
+  - (Moodle depende de Docker Desktop en WSL2)
+
+**Estado: Fase 1 COMPLETA! ✅**
+
+**Próximos pasos (Fase 2):**
+1. Landing page + navegación principal
+2. Sistema de diseño base (navbar, footer, layouts)
+3. Páginas de autenticación (sign-in, sign-up)
+4. Integración de Better Auth client en UI
 
 **Próximos pasos en Fase 1:**
 1. Investigar schema previo en InsForge (tablas existentes: hospital, license, product, session, user, account, verification)

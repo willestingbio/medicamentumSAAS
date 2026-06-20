@@ -1,0 +1,12 @@
+{
+    "moodle_base_url": "http://localhost:8090",
+    "moodle_ws_token": "91c2cc395d7065e7986950998ee4045a",
+    "moodle_ws_username": "admin",
+    "moodle_external_service": "m360_api",
+    "demo_course_id": 2,
+    "demo_course_shortname": "M360-DEMO-001",
+    "demo_student_username": "estudiante_demo",
+    "demo_student_password": "EstudianteDemo123!",
+    "admin_username": "admin",
+    "generated_at": "2026-06-20T20:54:09+01:00"
+}

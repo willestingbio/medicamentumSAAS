@@ -1,102 +1,72 @@
-# docker/docker-compose.yml
-# Entorno LOCAL de pruebas para Medicamentum360 ↔ Moodle.
-# `docker compose up -d` deja Moodle instalado, con Web Services REST
-# habilitados, un curso demo y un token listo para usar — sin tocar nada
-# a mano. NO usar esta configuración en producción (passwords de ejemplo,
-# ALLOW_EMPTY_PASSWORD=yes, etc.).
-#
-# Servicios:
-#   - mariadb           → base de datos de Moodle
-#   - moodle            → instancia Moodle (bitnami/moodle), auto-instalada
-#                          vía variables de entorno en el primer arranque
-#   - moodle-bootstrap   → contenedor "job" de un solo uso: espera a que
-#                          Moodle esté arriba y corre moodle-bootstrap.php
-#                          (habilita webservices, crea servicio + token,
-#                          curso demo y estudiante demo)
-#
-# Uso:
-#   cd docker
-#   docker compose up -d
-#   docker compose logs -f moodle-bootstrap   # ver progreso del setup
-#   cat output/.env.moodle.local              # credenciales/token generados
-
+# docker/docker-compose.yml — Entorno LOCAL de pruebas Medicamentum360 ↔ Moodle
 services:
   mariadb:
-    image: docker.io/bitnami/mariadb:11.4
+    image: docker.io/library/mariadb:11
     container_name: m360-moodle-mariadb
     environment:
-      - ALLOW_EMPTY_PASSWORD=yes
-      - MARIADB_USER=bn_moodle
-      - MARIADB_DATABASE=bitnami_moodle
-      - MARIADB_CHARACTER_SET=utf8mb4
-      - MARIADB_COLLATE=utf8mb4_unicode_ci
+      - MYSQL_ROOT_PASSWORD=medicamentum360_root
+      - MYSQL_DATABASE=moodle
+      - MYSQL_USER=moodle
+      - MYSQL_PASSWORD=medicamentum360_moodle
     volumes:
-      - mariadb_data:/bitnami/mariadb
+      - mariadb_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "bn_moodle"]
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "root", "-pmedicamentum360_root"]
       interval: 10s
       timeout: 5s
       retries: 15
-      start_period: 20s
+      start_period: 30s
 
   moodle:
-    image: docker.io/bitnami/moodle:5.2
+    image: docker.io/jhardison/moodle:latest
     container_name: m360-moodle
     depends_on:
       mariadb:
         condition: service_healthy
     environment:
-      - MOODLE_USERNAME=admin
-      - MOODLE_PASSWORD=Adm1nM360Test#2026
-      - MOODLE_EMAIL=admin@medicamentum360.local
+      - MOODLE_URL=http://localhost:8090
+      - MOODLE_DB_HOST=mariadb
+      - MOODLE_DB_PORT=3306
+      - MOODLE_DB_USER=moodle
+      - MOODLE_DB_PASSWORD=medicamentum360_moodle
+      - MOODLE_DB_NAME=moodle
+      - MOODLE_ADMIN_USER=admin
+      - MOODLE_ADMIN_PASSWORD=Adm1nM360Test#2026
+      - MOODLE_ADMIN_EMAIL=admin@medicamentum360.local
       - MOODLE_SITE_NAME=Medicamentum360 LMS (local)
       - MOODLE_LANG=es
-      - MOODLE_DATABASE_HOST=mariadb
-      - MOODLE_DATABASE_PORT_NUMBER=3306
-      - MOODLE_DATABASE_USER=bn_moodle
-      - MOODLE_DATABASE_NAME=bitnami_moodle
-      # Recomendado solo en local: evita que la instalación falle si Mariadb
-      # tarda en aceptar password vacío durante el primer build.
-      - ALLOW_EMPTY_PASSWORD=yes
+      - MOODLE_DATA_DIR=/var/www/moodledata
     ports:
-      - "8090:8080"
-      - "8453:8443"
+      - "8090:80"
     volumes:
-      - moodle_data:/bitnami/moodle
-      - moodledata_data:/bitnami/moodledata
-      - ./moodle-bootstrap.php:/bitnami/moodle/local-m360-bootstrap.php:ro
+      - moodle_data:/var/www/moodledata
+      - ./moodle-bootstrap.php:/tmp/moodle-bootstrap.php:ro
     healthcheck:
-      # El auto-instalador de bitnami tarda en terminar; este healthcheck
-      # solo pasa a "healthy" cuando Apache+PHP responden con una página real.
-      test: ["CMD", "curl", "-f", "http://localhost:8080/login/index.php"]
+      test: ["CMD", "curl", "-f", "http://localhost:80/login/index.php"]
       interval: 10s
       timeout: 5s
       retries: 40
-      start_period: 60s
+      start_period: 120s
     restart: unless-stopped
 
   moodle-bootstrap:
-    image: docker.io/bitnami/moodle:5.2
+    image: docker.io/jhardison/moodle:latest
     container_name: m360-moodle-bootstrap
     depends_on:
       moodle:
         condition: service_healthy
     entrypoint: ["/bin/bash", "-c"]
-    # Pequeño margen extra tras el healthcheck: el instalador de bitnami
-    # sigue ejecutando tareas de post-instalación (cron inicial, purge de
-    # caches) unos segundos después de que Apache ya responde.
     command: >
-      "sleep 10 &&
-       echo '[moodle-bootstrap] Ejecutando provisioning de Medicamentum360...' &&
-       php /bitnami/moodle/local-m360-bootstrap.php"
+      "sleep 30 &&
+       echo '[moodle-bootstrap] Iniciando provisioning...' &&
+       php /tmp/moodle-bootstrap.php"
     volumes:
-      - moodle_data:/bitnami/moodle
-      - moodledata_data:/bitnami/moodledata
-      - ./moodle-bootstrap.php:/bitnami/moodle/local-m360-bootstrap.php:ro
+      - moodle_data:/var/www/moodledata
+      - ./moodle-bootstrap.php:/tmp/moodle-bootstrap.php:ro
       - ./output:/output
+      - ./config.php:/var/www/html/config.php:ro
     restart: "no"
 
 volumes:
   mariadb_data:
   moodle_data:
-  moodledata_data:

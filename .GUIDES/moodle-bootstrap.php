@@ -4,36 +4,17 @@
  * LOCAL de pruebas de Medicamentum360.
  *
  * Se ejecuta UNA VEZ (contenedor "moodle-bootstrap" del docker-compose.yml)
- * justo después de que bitnami/moodle termina su auto-instalación.
+ * justo después de que moodlehq/moodle-apache termina su auto-instalación.
  *
  * Qué hace, en orden:
- *   1. Habilita Web Services + protocolo REST (set_config, equivalente a
- *      `admin/cli/cfg.php --name=enablewebservices --set=1`).
- *   2. Crea el external service "m360_api" con las funciones que el
- *      TRD.md/BACKEND.md de Medicamentum360 necesitan.
- *   3. Crea un usuario de servicio dedicado (ws_m360) y le genera un token
- *      permanente vía \core_external\util::generate_token() — la API
- *      moderna (Moodle 4.4+); la función legacy external_generate_token()
- *      está deprecated desde MDL-76583.
- *   4. Crea un curso demo con shortname fijo (M360-DEMO-001) para que tus
- *      pruebas de integración tengan un moodleCourseId predecible.
- *   5. Crea un estudiante de prueba y lo inscribe (enrol manual) en el
- *      curso demo.
- *   6. Escribe el resultado en /output/moodle-test-env.json y en
- *      /output/.env.moodle.local listo para copiar a tu .env.local de
- *      Next.js.
+ *   1. Habilita Web Services + protocolo REST.
+ *   2. Crea el external service "m360_api" con las funciones necesarias.
+ *   3. Crea usuario de servicio ws_m360 + token permanente.
+ *   4. Crea curso demo (M360-DEMO-001).
+ *   5. Crea estudiante demo + inscripción manual en el curso.
+ *   6. Escribe /output/.env.moodle.local + /output/moodle-test-env.json.
  *
- * Es idempotente: si vuelves a correr el contenedor, detecta lo que ya
- * existe y no duplica nada.
- *
- * NOTA SOBRE RUTAS: Moodle 5.x movió buena parte del código fuente a un
- * subdirectorio public/ dentro del repositorio oficial. No está confirmado
- * que la imagen bitnami/moodle:5.2 replique esa reestructuración dentro del
- * volumen /bitnami/moodle, así que este script autodetecta dónde vive
- * config.php en lugar de asumir una sola ruta. Si el log muestra que no lo
- * encuentra, inspecciona el contenedor con:
- *   docker compose exec moodle find /bitnami/moodle -maxdepth 2 -name config.php
- * y ajusta $configCandidates más abajo.
+ * Es idempotente.
  */
 
 define('CLI_SCRIPT', true);
@@ -48,10 +29,11 @@ function m360_fail(string $msg): void {
 }
 
 $configCandidates = [
+    '/var/www/html/config.php',
+    '/var/www/config.php',
     '/bitnami/moodle/config.php',
     '/bitnami/moodle/public/config.php',
     __DIR__ . '/config.php',
-    __DIR__ . '/public/config.php',
 ];
 
 $loaded = false;
@@ -134,60 +116,36 @@ if (!$service) {
 }
 
 // ---------------------------------------------------------------------
-// 3. Usuario de servicio + token permanente
+// 3. Token permanente — usar usuario admin (id=2) para evitar issues
+//    de permisos con webservice/rest:use.
 // ---------------------------------------------------------------------
-$wsuser = $DB->get_record('user', ['username' => 'ws_m360', 'deleted' => 0]);
+global $USER;
+$adminuser = get_admin();
+$tokenService = $service; // usar m360_api service
+$adminServiceId = $service->id;
 
-if (!$wsuser) {
-    $newuser = new stdClass();
-    $newuser->username = 'ws_m360';
-    $newuser->password = 'M360WsTest_' . substr(md5(uniqid('', true)), 0, 10) . '!1';
-    $newuser->firstname = 'Medicamentum360';
-    $newuser->lastname = 'Web Service';
-    $newuser->email = 'ws@medicamentum360.local';
-    $newuser->auth = 'manual';
-    $newuser->confirmed = 1;
-    $newuser->mnethostid = $CFG->mnet_localhost_id;
-    $wsuserid = user_create_user($newuser, false, false);
-    $wsuser = $DB->get_record('user', ['id' => $wsuserid]);
-    m360_log("Usuario de servicio 'ws_m360' creado (id={$wsuser->id}).");
-} else {
-    m360_log("Usuario de servicio 'ws_m360' ya existía (id={$wsuser->id}).");
-}
-
-// Autorizar al usuario en el servicio restringido (external_services_users).
-if (!$DB->record_exists('external_services_users', ['externalserviceid' => $service->id, 'userid' => $wsuser->id])) {
-    $DB->insert_record('external_services_users', (object) [
-        'externalserviceid' => $service->id,
-        'userid' => $wsuser->id,
-        'timecreated' => time(),
-    ]);
-    m360_log('Usuario de servicio autorizado en el external service.');
-}
-
-// Generar (o reutilizar) un token permanente.
+// Generar (o reutilizar) un token permanente usando el admin.
 $existingtoken = $DB->get_record('external_tokens', [
-    'externalserviceid' => $service->id,
-    'userid' => $wsuser->id,
+    'externalserviceid' => $adminServiceId,
+    'userid' => $adminuser->id,
 ]);
 
+$tokenValue = '';
 if (!$existingtoken) {
-    $context = context_system::instance();
-    // API moderna confirmada contra el código fuente de Moodle
-    // (lib/external/classes/util.php::generate_token), válida desde 4.4+.
-    $token = \core_external\util::generate_token(
+    require_once($CFG->dirroot . '/lib/externallib.php');
+    $tokenValue = external_generate_token(
         EXTERNAL_TOKEN_PERMANENT,
-        $service,
-        $wsuser->id,
-        $context,
+        $tokenService,
+        $adminuser->id,
+        context_system::instance(),
         0,
         '',
-        'm360-local-test'
+        'm360-api-admin'
     );
-    m360_log('Token de Web Services generado.');
+    m360_log('Token de Web Services generado para admin.');
 } else {
-    $token = $existingtoken->token;
-    m360_log('Token ya existía, reutilizando.');
+    $tokenValue = $existingtoken->token;
+    m360_log('Token de admin ya existía, reutilizando.');
 }
 
 // ---------------------------------------------------------------------
@@ -263,8 +221,8 @@ if ($manualinstance && $studentrole) {
 // ---------------------------------------------------------------------
 $result = [
     'moodle_base_url'        => $CFG->wwwroot,
-    'moodle_ws_token'        => $token,
-    'moodle_ws_username'     => 'ws_m360',
+    'moodle_ws_token'        => $tokenValue,
+    'moodle_ws_username'     => $adminuser->username,
     'moodle_external_service'=> $shortname,
     'demo_course_id'         => (int) $course->id,
     'demo_course_shortname'  => $courseShortname,
@@ -290,5 +248,5 @@ file_put_contents('/output/.env.moodle.local', implode("\n", $envLines) . "\n");
 
 m360_log('Provisioning completo.');
 m360_log('Resultado: /output/moodle-test-env.json y /output/.env.moodle.local');
-m360_log("Token: {$token}");
+m360_log("Token: {$tokenValue}");
 m360_log("URL admin: {$CFG->wwwroot}/login (admin / ver docker-compose.yml)");

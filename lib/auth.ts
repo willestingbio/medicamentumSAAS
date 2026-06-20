@@ -97,12 +97,27 @@ export const auth = betterAuth({
         // Post sign-up: crear cuenta espejo en Moodle
         matcher: (ctx) => ctx.path === '/sign-up' && ctx.method === 'POST',
         handler: async (ctx) => {
-          console.log('[Auth Hook] Post sign-up:', {
-            userId: ctx.context.user?.id,
-            email: ctx.context.user?.email,
-          });
-          // La integración con Moodle se hace en lib/moodle/client.ts
-          // y se dispara desde un server action o API route, no aquí
+          if (!ctx.context.user?.email || !ctx.context.user?.name) return;
+          try {
+            const { createMoodleUser } = await import('./moodle/client');
+            const nameParts = ctx.context.user.name.split(' ');
+            const moodleUserId = await createMoodleUser({
+              username: ctx.context.user.email.split('@')[0],
+              email: ctx.context.user.email,
+              firstname: nameParts[0] || ctx.context.user.name,
+              lastname: nameParts.slice(1).join(' ') || '.',
+              password: crypto.randomUUID().slice(0, 12) + '!Aa1',
+            });
+            if (moodleUserId) {
+              const { prisma } = await import('./prisma');
+              await prisma.user.update({
+                where: { id: ctx.context.user.id },
+                data: { moodleUserId },
+              });
+            }
+          } catch (e) {
+            console.warn('[Auth Hook] Moodle user creation skipped:', e instanceof Error ? e.message : e);
+          }
         },
       },
     ],
