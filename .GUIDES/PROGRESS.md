@@ -17,7 +17,7 @@ Actualizado: 2026-06-20
   - CalendarEvent estricto userId-only (sin hospital_admin por TRD.md §4)
   - Helper: `public.get_user_org_id()`
   - Grants para authenticated + anon
-- [x] Better Auth 1.6.20: email+password + Google OAuth (placeholders)
+- [x] Better Auth 1.6.20: email+password + Google OAuth + Wompi
   - `lib/auth.ts` configurado con hook after post sign-up para Moodle
   - `lib/auth-client.ts` para cliente React
 - [x] Cuenta espejo automática en Moodle
@@ -31,16 +31,17 @@ Actualizado: 2026-06-20
   - Páginas `/privacidad` y `/terminos` creadas
 - [x] Variables de entorno
   - `.env.local` con DATABASE_URL, BETTER_AUTH_SECRET, MOODLE_WS_TOKEN
-  - Placeholders para GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, WOMPI_*
+  - GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET (reales)
+  - WOMPI_PUBLIC_KEY, WOMPI_PRIVATE_KEY, WOMPI_EVENTS_SECRET (reales)
 - [x] Moodle local de pruebas (Docker)
   - Moodle 4.0.5 (jhardison/moodle) corriendo en `http://localhost:8090`
-  - API REST habilitada con token: 91c2cc395d7065e7986950998ee4045a
+  - API REST habilitada con token: m360_08f4ac5db2a6ad562e81684fb6c5dc
   - Curso demo: M360-DEMO-001 (id=2)
   - Estudiante demo: estudiante_demo / EstudianteDemo123!
   - Bootstrap completo: webservices, token, curso, usuario de prueba
 - [x] Build verificado: `npm run build` compila sin errores
 - [x] RLS isolation test SQL creado (`tests/rls-isolation-test.sql`)
-  - Pendiente: ejecutar con autenticación real (no CLI) para confirmar
+  - Bloqueante antes de Fase 4 (pagos), no antes de Fase 2
 
 **Estado: Fase 1 COMPLETA! ✅**
 
@@ -52,15 +53,24 @@ Actualizado: 2026-06-20
 5. vanilla-cookieconsent: guiOptions para layout/position en v3.x
 
 **Próximos pasos (Fase 2):**
-1. Obtener credenciales reales de Google OAuth y Wompi
-2. Ejecutar RLS isolation test como usuario autenticado
-3. Landing page + navegación principal
-4. Sistema de diseño base (navbar, footer, layouts)
-5. Páginas de autenticación (sign-in, sign-up) con UI
-6. Integración de Better Auth client en componentes
+1. Landing page + navegación principal
+2. Sistema de diseño base (navbar, footer, layouts)
+3. Páginas de autenticación (sign-in, sign-up) con UI
+4. Integración de Better Auth client en componentes
 
 ## Fase 2 — Landing y navegación
-- [ ] No iniciada
+- [x] NavBar scroll-aware (píldora con blur + menú Sheet mobile)
+- [x] DarkModeSwitcher con `useColorMode` + localStorage persistencia
+- [x] Footer con branding, links y legal (privacidad/terminos)
+- [x] Landing: Hero, Nosotros, Ejemplos, BlogCarousel
+- [x] Meta tags OG/Twitter Card + Schema.org metadata
+- [x] 404 (not-found.tsx) con branding
+- [x] 500 (error.tsx) con retry
+- [x] UI components: Button, Card, Avatar, Sheet (sin DropdownMenu Radix — custom)
+- [x] tsconfig.json paths: agregado `@/hooks/*` y corregido `@/*`
+- [x] Build: `npm run build` compila sin errores ✅
+
+**Estado: Fase 2 COMPLETA! ✅**
 
 ## Fase 3 — Marketplace y detalle de producto
 - [ ] No iniciada

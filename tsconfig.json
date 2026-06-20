@@ -25,22 +25,13 @@
     "noFallthroughCasesInSwitch": true,
     /* Path aliases */
     "baseUrl": ".",
-    "paths": {
-      "@/*": [
-        "src/*"
-      ],
-      "@/app/*": [
-        "app/*"
-      ],
-      "@/lib/*": [
-        "lib/*"
-      ],
-      "@/components/*": [
-        "components/*"
-      ],
-      "@/public/*": [
-        "public/*"
-      ]
+"paths": {
+      "@/*": ["./*"],
+      "@/app/*": ["app/*"],
+      "@/lib/*": ["lib/*"],
+      "@/components/*": ["components/*"],
+      "@/hooks/*": ["hooks/*"],
+      "@/public/*": ["public/*"]
     },
     "allowJs": true,
     "incremental": true,
