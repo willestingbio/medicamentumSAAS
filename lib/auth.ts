@@ -1,7 +1,30 @@
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { prisma } from './prisma';
-import { sendEmail } from './email';
+import { createClient } from '@insforge/sdk';
+import jwt from 'jsonwebtoken';
+
+function requireEnv(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing required env var: ${name}`);
+  return v;
+}
+
+/**
+ * Cliente InsForge server-side para enviar emails transaccionales.
+ * Los callbacks de Better Auth se ejecutan sin sesión de usuario,
+ * así que firmamos un JWT de servicio de 5 minutos con INSFORGE_JWT_SECRET.
+ */
+function insforgeServerClient() {
+  const token = jwt.sign(
+    { sub: 'better-auth-service', role: 'authenticated', aud: 'insforge-api' },
+    requireEnv('INSFORGE_JWT_SECRET'),
+    { algorithm: 'HS256', expiresIn: '5m' },
+  );
+  const c = createClient({ baseUrl: requireEnv('NEXT_PUBLIC_INSFORGE_BASE_URL') });
+  c.getHttpClient().setAuthToken(token);
+  return c;
+}
 
 /**
  * Better Auth server configuration.
@@ -30,14 +53,16 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     sendResetPassword: async ({ user, url }) => {
-      await sendEmail({
-        to: { email: user.email, name: user.name },
+      const insforge = insforgeServerClient();
+      const { error } = await insforge.emails.send({
+        to: user.email,
         subject: 'Restablece tu contraseña — Medicamentum360',
         html: `<p>Hola ${user.name ?? ''},</p>
 <p>Has solicitado restablecer tu contraseña. Haz clic en el siguiente enlace:</p>
 <p><a href="${url}">Restablecer contraseña</a></p>
 <p>Si no solicitaste esto, ignora este mensaje.</p>`,
       });
+      if (error) throw new Error(error.message);
     },
   },
 
@@ -45,13 +70,15 @@ export const auth = betterAuth({
     sendOnSignUp: true,
     autoSignInAfterVerification: true,
     sendVerificationEmail: async ({ user, url }) => {
-      await sendEmail({
-        to: { email: user.email, name: user.name },
+      const insforge = insforgeServerClient();
+      const { error } = await insforge.emails.send({
+        to: user.email,
         subject: 'Verifica tu email — Medicamentum360',
         html: `<p>Hola ${user.name ?? ''},</p>
 <p>Gracias por registrarte. Haz clic en el siguiente enlace para verificar tu email:</p>
 <p><a href="${url}">Verificar email</a></p>`,
       });
+      if (error) throw new Error(error.message);
     },
   },
 
@@ -63,7 +90,7 @@ export const auth = betterAuth({
     },
   },
 
-  // Validación de email (MVP simple, sin verificación)
+  // Verificación de email vía InsForge (Brevo SMTP o cloud relay)
   user: {
     additionalFields: {
       role: {
