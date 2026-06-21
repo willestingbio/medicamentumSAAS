@@ -470,3 +470,85 @@ npm install -D tailwindcss@^4 @tailwindcss/forms @tailwindcss/typography
 npx shadcn@latest init
 npx shadcn@latest add button dialog sheet progress dropdown-menu toast avatar card input label select checkbox switch separator
 ```
+
+---
+
+## 8. Animaciones — Patrones de Emil Kowalski (Design Engineering)
+
+### 8.1 Easing custom (sobrescribir los built-in de CSS)
+
+Los easings built-in de CSS son débiles. Usar estos custom curves:
+
+```css
+--ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+--ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+--ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+```
+
+**Regla: nunca `ease-in` en UI.** Comienza lento, retrasando el momento que el usuario más observa.
+
+### 8.2 Decision framework (preguntar antes de animar)
+
+1. **¿Debería animar esto?** Frecuencia: 100+/día → NO. Decenas/día → reducir. Ocasional → estándar. Raro → delight.
+2. **¿Cuál es el propósito?** Consistencia espacial, indicación de estado, feedback, explicación, evitar cambio brusco.
+3. **¿Qué easing?** Entrando/saliendo → `ease-out`. Moviéndose en pantalla → `ease-in-out`. Hover → `ease`. Constante → `linear`.
+4. **¿Qué duración?** Botón 100-160ms. Tooltip 125-200ms. Dropdown 150-250ms. Modal/drawer 200-500ms. **Máximo 300ms para UI.**
+
+### 8.3 Patrones de componentes
+
+| Elemento | Animación | Detalle |
+|---|---|---|
+| Botón (`:active`) | `scale(0.97)` + `transition 160ms ease-out` | Feedback táctil inmediato |
+| Dropdown/popover | `scale(0.95)` + `opacity: 0` → `scale(1)` + `opacity: 1`, 150-250ms ease-out | `transform-origin` desde el trigger (no center) |
+| Tooltip | 125-200ms ease-out, origin-aware, skip delay en hovers siguientes | Usar `data-instant` |
+| Modal | Centrado, `transform-origin: center`, 200-500ms | Excepción: modales NO cambian origin |
+| Drawer | `translateY(100%)` con `ease-out` 400ms o spring | Usar `--ease-drawer` para iOS-like |
+| Stagger (grupos) | 30-80ms entre items, `translateY(8px)` + `opacity`, 300ms ease-out | No bloquear interacción |
+
+### 8.4 Reglas de performance
+
+- **Solo animar `transform` y `opacity`** — corren en GPU. `width`/`height`/`margin`/`padding`/`top`/`left` NO.
+- **CSS transitions > keyframes** para UI dinámica (interrumpibles). Keyframes reinician desde cero.
+- **`clip-path`** es animable y GPU-accelerado. Útil para reveals, overlays de hold-to-delete, pestañas.
+- **WAAPI** para animaciones programáticas con rendimiento CSS.
+- **Framer Motion shorthands** (`x`, `y`, `scale`) NO son hardware-accelerated. Usar `transform: "translateX()"`.
+
+### 8.5 Accesibilidad
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  /* Mantener opacity/color, eliminar movement/position */
+}
+
+@media (hover: hover) and (pointer: fine) {
+  /* Gatear hover animations — touch devices no deben trigger hover */
+}
+```
+
+### 8.6 Asymmetric timing
+
+Donde el usuario decide → lento (hold-to-delete: 2s). Donde el sistema responde → rápido (release: 200ms).
+
+### 8.7 Verify checklist
+
+| Issue | Fix |
+|---|---|
+| `transition: all` | Especificar propiedades exactas |
+| `scale(0)` entry | `scale(0.95)` + `opacity: 0` |
+| `ease-in` en UI | `ease-out` o custom curve |
+| `transform-origin: center` en popover | Origin desde trigger (Radix: `var(--radix-popover-content-transform-origin)`) |
+| Animación en keyboard action | Remover completamente |
+| Duration > 300ms en UI | Reducir a 150-250ms |
+| Hover sin media query | `@media (hover: hover) and (pointer: fine)` |
+| Keyframes en elementos rápidos | CSS transitions |
+| Misma velocidad enter/exit | Exit más rápido que enter |
+
+### 8.8 CSS variables globales (agregar a globals.css)
+
+```css
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+```

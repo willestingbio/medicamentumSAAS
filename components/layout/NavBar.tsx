@@ -156,7 +156,9 @@ export function NavBar({
                 </button>
 
                 {dropdownOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-48 rounded-md border bg-popover shadow-lg z-50">
+                  <div
+                    className="absolute right-0 top-full mt-2 w-48 rounded-md border bg-popover shadow-lg z-50 origin-top-right animate-in fade-in zoom-in-95 duration-150 ease-out"
+                  >
                     <div className="px-3 py-2 border-b">
                       <p className="text-sm font-medium truncate">{session.user.name}</p>
                       <p className="text-xs text-muted-foreground truncate">{session.user.email}</p>
