@@ -70,7 +70,11 @@ Actualizado: 2026-06-20
 - [x] tsconfig.json paths: agregado `@/hooks/*` y corregido `@/*`
 - [x] Build: `npm run build` compila sin errores ✅
 
-**Estado: Fase 2 COMPLETA! ✅**
+**Estado: Fase 2 con problemas! ✅**
+ - Problemas a solucionar antes de seguir a Fase 3:
+  1. explicar que es eso de que el dropdown menu, y si es lo que se despliega con el boton "entrar" no esta funcionando
+  2. cuando se presiona nosotros, ejemplos o blog en la barra de navegación, no hace nada (debería hacer scroll a esa sección)
+  3. el carrusel de blog no tiene funcionalidad de auto-scroll, pausa al hover, navegación por teclado (flechas) ni swipe táctil, solo es un diseño estático.
 
 ## Fase 3 — Marketplace y detalle de producto
 - [ ] No iniciada

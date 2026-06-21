@@ -6,9 +6,9 @@ import { Nosotros } from '@/components/landing/Nosotros';
 export default function HomePage() {
   return (
     <>
-      <Hero />
-      <Nosotros />
-      <Ejemplos />
+      <section id="hero"><Hero /></section>
+      <section id="nosotros"><Nosotros /></section>
+      <section id="ejemplos"><Ejemplos /></section>
       <BlogCarousel />
     </>
   );
