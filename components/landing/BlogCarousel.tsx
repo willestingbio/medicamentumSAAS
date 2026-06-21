@@ -1,5 +1,6 @@
 'use client';
-import { useEffect, useRef } from 'react';
+import useEmblaCarousel from 'embla-carousel-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
 import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -37,50 +38,62 @@ const posts = [
 ];
 
 export function BlogCarousel() {
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [emblaRef, emblaApi] = useEmblaCarousel({
+    loop: true,
+    align: 'start',
+    skipSnaps: false,
+    dragFree: false,
+  });
+
+  const [isHovering, setIsHovering] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const isHovering = useRef(false);
+  const [prevEnabled, setPrevEnabled] = useState(false);
+  const [nextEnabled, setNextEnabled] = useState(false);
 
-  const scroll = (direction: 'left' | 'right') => {
-    if (!scrollRef.current) return;
-    const card = scrollRef.current.querySelector('[data-post]') as HTMLElement;
-    if (!card) return;
-    const cardWidth = card.offsetWidth + 24; // gap-6 = 24px
-    scrollRef.current.scrollBy({
-      left: direction === 'left' ? -cardWidth * 2 : cardWidth * 2,
-      behavior: 'smooth',
-    });
-  };
+  const scrollPrev = useCallback(() => emblaApi?.scrollPrev(), [emblaApi]);
+  const scrollNext = useCallback(() => emblaApi?.scrollNext(), [emblaApi]);
 
-  const startAutoScroll = () => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(() => {
-      if (!isHovering.current && scrollRef.current) {
-        const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
-        if (scrollLeft >= scrollWidth - clientWidth - 10) {
-          scrollRef.current.scrollTo({ left: 0, behavior: 'smooth' });
-        } else {
-          scrollRef.current.scrollBy({ left: 320, behavior: 'smooth' });
-        }
-      }
-    }, 4000);
-  };
+  const onSelect = useCallback(() => {
+    if (!emblaApi) return;
+    setPrevEnabled(emblaApi.canScrollPrev());
+    setNextEnabled(emblaApi.canScrollNext());
+  }, [emblaApi]);
 
   useEffect(() => {
+    if (!emblaApi) return;
+    onSelect();
+    emblaApi.on('select', onSelect);
+    emblaApi.on('reInit', onSelect);
+  }, [emblaApi, onSelect]);
+
+  const startAutoScroll = useCallback(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      if (!isHovering && emblaApi) emblaApi.scrollNext();
+    }, 4000);
+  }, [isHovering, emblaApi]);
+
+  useEffect(() => {
+    if (!emblaApi) return;
     startAutoScroll();
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, []);
-
-  const handleMouseEnter = () => { isHovering.current = true; };
-  const handleMouseLeave = () => { isHovering.current = false; };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowLeft') scroll('left');
-    if (e.key === 'ArrowRight') scroll('right');
-  };
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [emblaApi, startAutoScroll]);
 
   return (
-    <section id="blog" className="py-24 bg-secondary/30" tabIndex={0} onKeyDown={handleKeyDown}>
+    <section
+      id="blog"
+      className="py-24 bg-secondary/30"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'ArrowLeft') scrollPrev();
+        if (e.key === 'ArrowRight') scrollNext();
+      }}
+      onMouseEnter={() => setIsHovering(true)}
+      onMouseLeave={() => setIsHovering(false)}
+      aria-label="Artículos del blog"
+    >
       <div className="container mx-auto px-4">
         <div className="flex items-end justify-between mb-8">
           <div>
@@ -89,15 +102,17 @@ export function BlogCarousel() {
           </div>
           <div className="hidden sm:flex gap-2">
             <button
-              onClick={() => scroll('left')}
-              className="size-9 rounded-full border flex items-center justify-center hover:bg-accent transition-colors"
+              onClick={scrollPrev}
+              disabled={!prevEnabled}
+              className="size-9 rounded-full border flex items-center justify-center hover:bg-accent transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               aria-label="Anterior"
             >
               <ChevronLeft className="size-4" />
             </button>
             <button
-              onClick={() => scroll('right')}
-              className="size-9 rounded-full border flex items-center justify-center hover:bg-accent transition-colors"
+              onClick={scrollNext}
+              disabled={!nextEnabled}
+              className="size-9 rounded-full border flex items-center justify-center hover:bg-accent transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               aria-label="Siguiente"
             >
               <ChevronRight className="size-4" />
@@ -105,44 +120,34 @@ export function BlogCarousel() {
           </div>
         </div>
 
-        {/* Carousel */}
-        <div
-          ref={scrollRef}
-          onMouseEnter={handleMouseEnter}
-          onMouseLeave={handleMouseLeave}
-          onTouchStart={() => { if (intervalRef.current) clearInterval(intervalRef.current); }}
-          onTouchEnd={startAutoScroll}
-          className="flex gap-6 overflow-x-auto pb-4 snap-x snap-mandatory"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', scrollBehavior: 'smooth' }}
-          aria-label="Artículos del blog"
-        >
-          {posts.map(({ title, excerpt, date, tag }) => (
-            <article
-              key={title}
-              data-post
-              className="min-w-[280px] max-w-[320px] snap-start flex-shrink-0"
-            >
-              <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer group">
-                <CardContent className="p-6 flex flex-col h-full">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-medium px-2 py-1 rounded-full bg-accent text-accent-foreground">
-                      {tag}
-                    </span>
-                    <time className="text-xs text-muted-foreground" dateTime={date}>{date}</time>
-                  </div>
-                  <CardTitle className="text-base mb-2 leading-snug flex-shrink-0">{title}</CardTitle>
-                  <p className="text-sm text-muted-foreground leading-relaxed flex-1 line-clamp-4">{excerpt}</p>
-                  <a
-                    href="#"
-                    className="inline-flex items-center text-sm text-primary font-medium mt-4 group-hover:gap-1 transition-all"
-                    aria-label={`Leer más: ${title}`}
-                  >
-                    Leer más <ArrowRight className="size-4 ml-1 group-hover:translate-x-1 transition-transform" />
-                  </a>
-                </CardContent>
-              </Card>
-            </article>
-          ))}
+        <div className="overflow-hidden" ref={emblaRef}>
+          <div className="flex gap-6">
+            {posts.map(({ title, excerpt, date, tag }) => (
+              <div key={title} className="min-w-[280px] max-w-[320px] flex-shrink-0">
+                <article className="h-full">
+                  <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer group">
+                    <CardContent className="p-6 flex flex-col h-full">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-medium px-2 py-1 rounded-full bg-accent text-accent-foreground">
+                          {tag}
+                        </span>
+                        <time className="text-xs text-muted-foreground" dateTime={date}>{date}</time>
+                      </div>
+                      <CardTitle className="text-base mb-2 leading-snug flex-shrink-0">{title}</CardTitle>
+                      <p className="text-sm text-muted-foreground leading-relaxed flex-1 line-clamp-4">{excerpt}</p>
+                      <a
+                        href="#"
+                        className="inline-flex items-center text-sm text-primary font-medium mt-4 group-hover:gap-1 transition-all"
+                        aria-label={`Leer más: ${title}`}
+                      >
+                        Leer más <ArrowRight className="size-4 ml-1 group-hover:translate-x-1 transition-transform" />
+                      </a>
+                    </CardContent>
+                  </Card>
+                </article>
+              </div>
+            ))}
+          </div>
         </div>
 
         <a href="#" className="sm:hidden inline-flex items-center text-sm font-medium text-primary hover:underline mt-4">

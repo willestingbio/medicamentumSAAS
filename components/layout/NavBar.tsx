@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { authClient, signOut } from '@/lib/auth-client';
+import { throttleWithTrailingInvocation } from '@/lib/throttle';
 import { cn } from '@/lib/utils';
 import { DarkModeSwitcher } from './DarkModeSwitcher';
 
@@ -19,7 +20,18 @@ export interface NavigationItem {
 function getInitials(name: string) {
   const parts = name.trim().split(' ');
   if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  return (parts[0][0] + (parts[parts.length - 1]?.[0] ?? '')).toUpperCase();
+}
+
+function UserAvatar({ user }: { user: { name: string; image?: string | null } }) {
+  return (
+    <Avatar className="size-8">
+      <AvatarImage src={user.image ?? undefined} />
+      <AvatarFallback className="text-xs bg-primary text-primary-foreground">
+        {getInitials(user.name ?? 'U')}
+      </AvatarFallback>
+    </Avatar>
+  );
 }
 
 export function NavBar({
@@ -29,25 +41,54 @@ export function NavBar({
 }) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
   const { data: session } = authClient.useSession();
 
-  const onScroll = useCallback(() => setIsScrolled(window.scrollY > 0), []);
+  useEffect(() => {
+    const throttled = throttleWithTrailingInvocation(() => {
+      setIsScrolled(window.scrollY > 0);
+    }, 50);
+    window.addEventListener('scroll', throttled);
+    return () => {
+      window.removeEventListener('scroll', throttled);
+      throttled.cancel();
+    };
+  }, []);
 
   useEffect(() => {
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, [onScroll]);
+    if (!dropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [dropdownOpen]);
 
-  const handleNavClick = (item: NavigationItem) => {
+  const scrollToSection = useCallback((sectionId: string) => {
+    const el = document.getElementById(sectionId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el.focus({ preventScroll: true });
+    }
+  }, []);
+
+  const handleNavClick = useCallback((item: NavigationItem) => {
     setMobileOpen(false);
     if (item.sectionId && pathname === '/') {
-      const el = document.getElementById(item.sectionId);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth' });
-      }
+      scrollToSection(item.sectionId);
     }
-  };
+  }, [pathname, scrollToSection]);
 
   const renderNavLink = (item: NavigationItem) => {
     const isActive = pathname === item.href;
@@ -64,7 +105,7 @@ export function NavBar({
             }
           }}
           className={cn(
-            "text-sm font-normal transition-colors hover:text-primary",
+            "text-sm font-normal transition-colors hover:text-primary cursor-pointer",
             isActive ? "text-primary font-medium" : "text-foreground"
           )}
         >
@@ -78,7 +119,9 @@ export function NavBar({
     <header className={cn("sticky top-0 z-50 transition-all duration-300", isScrolled && "top-4")}>
       <div className={cn(
         "transition-all duration-300",
-        isScrolled ? "bg-background/90 border rounded-full shadow-lg backdrop-blur-lg mx-4 md:mx-20 lg:pr-0" : "bg-background/80 border-b backdrop-blur-lg"
+        isScrolled
+          ? "bg-background/90 border rounded-full shadow-lg backdrop-blur-lg mx-4 md:mx-20"
+          : "bg-background/80 border-b backdrop-blur-lg"
       )}>
         <nav className={cn("flex items-center justify-between transition-all duration-300",
           isScrolled ? "p-3 lg:px-6" : "p-6 lg:px-8"
@@ -102,46 +145,51 @@ export function NavBar({
             <DarkModeSwitcher />
 
             {session?.user ? (
-              <div className="relative group">
-                <button className="flex items-center gap-2 hover:bg-accent rounded-full p-1 transition-colors">
-                  <Avatar className="size-8">
-                    <AvatarImage src={session.user.image ?? undefined} />
-                    <AvatarFallback className="text-xs bg-primary text-primary-foreground">
-                      {getInitials(session.user.name ?? 'U')}
-                    </AvatarFallback>
-                  </Avatar>
+              <div ref={dropdownRef} className="relative">
+                <button
+                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                  className="flex items-center gap-2 hover:bg-accent rounded-full p-1 transition-colors"
+                  aria-haspopup="true"
+                  aria-expanded={dropdownOpen}
+                >
+                  <UserAvatar user={session.user} />
                 </button>
-                {/* Dropdown */}
-                <div className="absolute right-0 top-full mt-2 w-48 rounded-md border bg-popover shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
-                  <div className="px-3 py-2 border-b">
-                    <p className="text-sm font-medium truncate">{session.user.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{session.user.email}</p>
+
+                {dropdownOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-48 rounded-md border bg-popover shadow-lg z-50">
+                    <div className="px-3 py-2 border-b">
+                      <p className="text-sm font-medium truncate">{session.user.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{session.user.email}</p>
+                    </div>
+                    <div className="py-1">
+                      <Link
+                        href="/dashboard"
+                        onClick={() => setDropdownOpen(false)}
+                        className="block px-3 py-1.5 text-sm hover:bg-accent transition-colors"
+                      >
+                        Mi dashboard
+                      </Link>
+                      <Link
+                        href="/configuracion"
+                        onClick={() => setDropdownOpen(false)}
+                        className="block px-3 py-1.5 text-sm hover:bg-accent transition-colors"
+                      >
+                        Configuración
+                      </Link>
+                      <button
+                        onClick={() => { signOut(); setDropdownOpen(false); }}
+                        className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-accent transition-colors"
+                      >
+                        Cerrar sesión
+                      </button>
+                    </div>
                   </div>
-                  <div className="py-1">
-                    <a href="/dashboard" className="block px-3 py-1.5 text-sm hover:bg-accent transition-colors">
-                      Mi dashboard
-                    </a>
-                    <a href="/configuracion" className="block px-3 py-1.5 text-sm hover:bg-accent transition-colors">
-                      Configuración
-                    </a>
-                    <button
-                      onClick={() => signOut()}
-                      className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-accent transition-colors"
-                    >
-                      Cerrar sesión
-                    </button>
-                  </div>
-                </div>
+                )}
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" asChild>
-                  <Link href="/sign-in">Entrar</Link>
-                </Button>
-                <Button size="sm" asChild>
-                  <Link href="/sign-up">Registro</Link>
-                </Button>
-              </div>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/sign-in">Entrar</Link>
+              </Button>
             )}
           </div>
 
@@ -187,9 +235,13 @@ export function NavBar({
                           <p className="text-sm font-medium">{session.user.name}</p>
                           <p className="text-xs text-muted-foreground">{session.user.email}</p>
                         </div>
-                        <a href="/dashboard" className="block rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent transition-colors">
+                        <Link
+                          href="/dashboard"
+                          onClick={() => setMobileOpen(false)}
+                          className="block rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent transition-colors"
+                        >
                           Mi dashboard
-                        </a>
+                        </Link>
                         <button
                           onClick={() => { signOut(); setMobileOpen(false); }}
                           className="w-full text-left rounded-lg px-3 py-2 text-sm text-destructive hover:bg-accent transition-colors"
@@ -198,19 +250,17 @@ export function NavBar({
                         </button>
                       </>
                     ) : (
-                      <>
-                        <div className="px-3 py-2">
-                          <Button size="sm" className="w-full mb-2" asChild>
-                            <Link href="/sign-up" onClick={() => setMobileOpen(false)}>Registro gratis</Link>
-                          </Button>
-                          <p className="text-xs text-center text-muted-foreground">
-                            ¿Ya tienes cuenta?{' '}
-                            <Link href="/sign-in" onClick={() => setMobileOpen(false)} className="text-primary hover:underline">
-                              Inicia sesión
-                            </Link>
-                          </p>
-                        </div>
-                      </>
+                      <div className="px-3 py-2 space-y-2">
+                        <Button size="sm" className="w-full" asChild>
+                          <Link href="/sign-up" onClick={() => setMobileOpen(false)}>Registro gratis</Link>
+                        </Button>
+                        <p className="text-xs text-center text-muted-foreground">
+                          ¿Ya tienes cuenta?{' '}
+                          <Link href="/sign-in" onClick={() => setMobileOpen(false)} className="text-primary hover:underline">
+                            Inicia sesión
+                          </Link>
+                        </p>
+                      </div>
                     )}
                   </div>
                 </div>
