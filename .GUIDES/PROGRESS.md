@@ -70,6 +70,10 @@ Actualizado: 2026-06-21
 - [x] Indicador visual de fortaleza de contraseña (5 niveles basados en heurística)
 - [x] Rate limiter utility (`lib/rate-limit.ts`) para Server Actions
 - [x] Integración Better Auth client en formularios (email+password + Google OAuth)
+- [x] Middleware de rutas protegidas (`middleware.ts`): dashboard, configuracion, checkout, mis-cursos
+- [x] Página `/forgot-password` con integración API Better Auth
+- [x] Animaciones: easing custom CSS vars (--ease-out, --ease-in-out), button `:active` scale(0.97), dropdown fade+zoom, prefers-reduced-motion, hover media query
+- [x] FRONTEND_PATTERNS.md §8: patrones de animación de Emil Kowalski
 - [x] Build: `npm run build` compila sin errores ✅
 
 **Estado: Fase 2 COMPLETA! ✅**
@@ -91,3 +95,13 @@ Actualizado: 2026-06-21
 
 ## Fase 8 — Pulido, cumplimiento y post-MVP
 - [ ] No iniciada
+
+---
+
+## Hallazgos (no bloqueantes antes de Fase 3)
+
+1. **RLS cross-org test** (`tests/rls-isolation-test.sql`) no ejecutado — bloqueante antes de Fase 4 (pagos), no antes de Fase 3.
+2. **NavBar hidden-on-scroll-down en marketplace** (UX_UI.md §3.1) no implementado — estado "hidden (al bajar en marketplace)" requiere lógica de scroll direction tracking.
+3. **Verificación de email** no configurada en Better Auth (MVP backlog per TRD.md §5).
+4. **Brevo (email transaccional)** no integrado aún (necesario para password reset real y confirmación de compra).
+5. **Landing no usa partículas sutiles** en Hero (UX_UI.md §3.2 menciona "fondo con partículas sutiles o gradiente animado") — actualmente solo gradiente CSS.
