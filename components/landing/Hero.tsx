@@ -1,12 +1,20 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { GraduationCap, Brain, Video } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 export function Hero() {
   return (
     <section className="relative overflow-hidden">
-      {/* Background gradient */}
+      {/* Animated gradient background — CSS-only, no JS */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-accent/20 dark:from-primary/10 dark:to-accent/30 pointer-events-none" />
+      <div
+        className={cn(
+          "absolute inset-0 bg-[length:200%_200%] motion-safe:animate-gradient-shift pointer-events-none",
+          "bg-gradient-to-br from-primary/[0.08] via-primary/[0.02] to-accent/[0.12]",
+          "dark:from-primary/[0.12] dark:via-primary/[0.04] dark:to-accent/[0.18]",
+        )}
+      />
       <div className="absolute top-20 right-0 w-96 h-96 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
 
       <div className="container mx-auto px-4 py-24 lg:py-32 relative">

@@ -40,22 +40,38 @@ export function NavBar({
   navigationItems: NavigationItem[];
 }) {
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isHidden, setIsHidden] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const prevScrollY = useRef(0);
   const pathname = usePathname();
+  const isMarketplace = pathname.startsWith('/productos');
   const { data: session } = authClient.useSession();
 
   useEffect(() => {
     const throttled = throttleWithTrailingInvocation(() => {
-      setIsScrolled(window.scrollY > 0);
+      const currentY = window.scrollY;
+      setIsScrolled(currentY > 0);
+      if (isMarketplace) {
+        const scrollingDown = currentY > prevScrollY.current;
+        const atTop = currentY <= 0;
+        if (atTop) {
+          setIsHidden(false);
+        } else if (scrollingDown) {
+          setIsHidden(true);
+        } else {
+          setIsHidden(false);
+        }
+        prevScrollY.current = currentY;
+      }
     }, 50);
     window.addEventListener('scroll', throttled);
     return () => {
       window.removeEventListener('scroll', throttled);
       throttled.cancel();
     };
-  }, []);
+  }, [isMarketplace]);
 
   useEffect(() => {
     if (!dropdownOpen) return;
@@ -116,7 +132,7 @@ export function NavBar({
   };
 
   return (
-    <header className={cn("sticky top-0 z-50 transition-all duration-300", isScrolled && "top-4")}>
+    <header className={cn("sticky top-0 z-50 transition-all duration-300", isScrolled && "top-4", isHidden && "-translate-y-full")}>
       <div className={cn(
         "transition-all duration-300",
         isScrolled

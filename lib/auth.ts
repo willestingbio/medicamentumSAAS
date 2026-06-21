@@ -1,6 +1,7 @@
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { prisma } from './prisma';
+import { sendEmail } from './email';
 
 /**
  * Better Auth server configuration.
@@ -11,6 +12,8 @@ import { prisma } from './prisma';
  * - POST /api/auth/sign-out
  * - GET /api/auth/session
  * - POST /api/auth/sign-in/google (OAuth)
+ * - POST /api/auth/forget-password
+ * - POST /api/auth/reset-password
  * 
  * Documentación: https://better-auth.com/docs
  */
@@ -26,6 +29,30 @@ export const auth = betterAuth({
 
   emailAndPassword: {
     enabled: true,
+    sendResetPassword: async ({ user, url }) => {
+      await sendEmail({
+        to: { email: user.email, name: user.name },
+        subject: 'Restablece tu contraseña — Medicamentum360',
+        html: `<p>Hola ${user.name ?? ''},</p>
+<p>Has solicitado restablecer tu contraseña. Haz clic en el siguiente enlace:</p>
+<p><a href="${url}">Restablecer contraseña</a></p>
+<p>Si no solicitaste esto, ignora este mensaje.</p>`,
+      });
+    },
+  },
+
+  emailVerification: {
+    sendOnSignUp: true,
+    autoSignInAfterVerification: true,
+    sendVerificationEmail: async ({ user, url }) => {
+      await sendEmail({
+        to: { email: user.email, name: user.name },
+        subject: 'Verifica tu email — Medicamentum360',
+        html: `<p>Hola ${user.name ?? ''},</p>
+<p>Gracias por registrarte. Haz clic en el siguiente enlace para verificar tu email:</p>
+<p><a href="${url}">Verificar email</a></p>`,
+      });
+    },
   },
 
   // Google OAuth

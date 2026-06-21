@@ -23,9 +23,9 @@ INSERT INTO public.organizations (id, name, nit) VALUES
   ('org-b-test', 'Organization B', 'NIT-002')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO public."user" (id, name, email, "emailVerified") VALUES
-  ('user-a-test', 'User A', 'user-a@test.local', true),
-  ('user-b-test', 'User B', 'user-b@test.local', true)
+INSERT INTO public."user" (id, name, email, "emailVerified", "updatedAt") VALUES
+  ('user-a-test', 'User A', 'user-a@test.local', true, NOW()),
+  ('user-b-test', 'User B', 'user-b@test.local', true, NOW())
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (id, role, "organizationId") VALUES
