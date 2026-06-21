@@ -1,6 +1,6 @@
 # PROGRESS — Medicamentum360
 **Estado actual del plan de desarrollo**
-Actualizado: 2026-06-20
+Actualizado: 2026-06-21
 
 ---
 
@@ -52,29 +52,27 @@ Actualizado: 2026-06-20
 4. Better Auth hooks: API de funciones en lugar de `{ matcher, handler }` en v1.6.20
 5. vanilla-cookieconsent: guiOptions para layout/position en v3.x
 
-**Próximos pasos (Fase 2):**
-1. Landing page + navegación principal
-2. Sistema de diseño base (navbar, footer, layouts)
-3. Páginas de autenticación (sign-in, sign-up) con UI
-4. Integración de Better Auth client en componentes
-
 ## Fase 2 — Landing y navegación
-- [x] NavBar scroll-aware (píldora con blur + menú Sheet mobile)
+- [x] NavBar scroll-aware (píldora con blur + menú Sheet mobile) con `throttleWithTrailingInvocation`
 - [x] DarkModeSwitcher con `useColorMode` + localStorage persistencia
 - [x] Footer con branding, links y legal (privacidad/terminos)
-- [x] Landing: Hero, Nosotros, Ejemplos, BlogCarousel
+- [x] Landing: Hero, Nosotros, Ejemplos, Blog (carrusel con Embla)
 - [x] Meta tags OG/Twitter Card + Schema.org metadata
 - [x] 404 (not-found.tsx) con branding
 - [x] 500 (error.tsx) con retry
-- [x] UI components: Button, Card, Avatar, Sheet (sin DropdownMenu Radix — custom)
+- [x] UI components: Button, Card, Avatar, Sheet, Input, Label (sin DropdownMenu Radix)
 - [x] tsconfig.json paths: agregado `@/hooks/*` y corregido `@/*`
+- [x] NavBar: dropdown state-based (funciona en mobile/touch), scroll suave a secciones con `scrollIntoView`
+- [x] BlogCarousel: reconstruido con `embla-carousel-react` (auto-play 4s, pausa al hover, flechas teclado, swipe táctil, loop)
+- [x] Páginas de autenticación: `/sign-in` y `/sign-up` con layout dos columnas
+- [x] AuthCarousel: carrusel pedagógico 3 pasos (Misión, LMS, Certificaciones) con Embla + auto-play
+- [x] Zod + React Hook Form con validación reactiva en ambos formularios
+- [x] Indicador visual de fortaleza de contraseña (5 niveles basados en heurística)
+- [x] Rate limiter utility (`lib/rate-limit.ts`) para Server Actions
+- [x] Integración Better Auth client en formularios (email+password + Google OAuth)
 - [x] Build: `npm run build` compila sin errores ✅
 
-**Estado: Fase 2 con problemas! ✅**
- - Problemas a solucionar antes de seguir a Fase 3:
-  1. explicar que es eso de que el dropdown menu, y si es lo que se despliega con el boton "entrar" no esta funcionando
-  2. cuando se presiona nosotros, ejemplos o blog en la barra de navegación, no hace nada (debería hacer scroll a esa sección)
-  3. el carrusel de blog no tiene funcionalidad de auto-scroll, pausa al hover, navegación por teclado (flechas) ni swipe táctil, solo es un diseño estático.
+**Estado: Fase 2 COMPLETA! ✅**
 
 ## Fase 3 — Marketplace y detalle de producto
 - [ ] No iniciada
