@@ -15,8 +15,9 @@ Actualizado: 2026-06-21
   - Migraciones: `create-medicamentum-schema`, `enable-rls-multi-tenant`, `fix-calendar-events-rls`
 - [x] RLS multi-tenant activado (29 policies en 11 tablas)
   - CalendarEvent estricto userId-only (sin hospital_admin por TRD.md §4)
-  - Helper: `public.get_user_org_id()`
+  - Helpers: `public.get_user_org_id()`, `public.requesting_user_id()` (para compatibilidad Better Auth)
   - Grants para authenticated + anon
+- [x] Bridge JWT route (`/api/insforge-token`) para autenticar InsForge API con sesión Better Auth
 - [x] Better Auth 1.6.20: email+password + Google OAuth + Wompi
   - `lib/auth.ts` configurado con hook after post sign-up para Moodle
   - `lib/auth-client.ts` para cliente React
@@ -98,10 +99,33 @@ Actualizado: 2026-06-21
 
 ---
 
-## Hallazgos (no bloqueantes antes de Fase 3)
+## Hallazgos resueltos en sesión 2026-06-21
 
-1. **RLS cross-org test** (`tests/rls-isolation-test.sql`) no ejecutado — bloqueante antes de Fase 4 (pagos), no antes de Fase 3.
-2. **NavBar hidden-on-scroll-down en marketplace** (UX_UI.md §3.1) no implementado — estado "hidden (al bajar en marketplace)" requiere lógica de scroll direction tracking.
-3. **Verificación de email** no configurada en Better Auth (MVP backlog per TRD.md §5).
-4. **Brevo (email transaccional)** no integrado aún (necesario para password reset real y confirmación de compra).
-5. **Landing no usa partículas sutiles** en Hero (UX_UI.md §3.2 menciona "fondo con partículas sutiles o gradiente animado") — actualmente solo gradiente CSS.
+### Hallazgo #1 — RLS cross-org test ✅
+- Setup SQL ejecutado (data test con org-a/org-b, users, products, enrollments)
+- Nueva función `public.requesting_user_id()` que lee `auth.jwt() ->> 'sub'`
+- `get_user_org_id()` actualizado para usar `requesting_user_id()`
+- 29 políticas RLS migradas de `auth.uid()::text` → `requesting_user_id()`
+- Bridge route `/api/insforge-token` firma HS256 JWT con InsForge secret
+- Test endpoint `/api/test/rls-isolation` verifica policies, helpers y datos test
+- **Prisma bypasses RLS** (service_role connection); test RLS real requiere InsForge SDK + bridge JWT en client-side
+
+### Hallazgo #2 — NavBar hidden-on-scroll-down en marketplace ✅
+- Scroll direction tracking via `useRef(prevScrollY)` + throttle
+- `isHidden` state en `/productos`: scrolling down → `-translate-y-full`, scrolling up → `translate-y-0`
+- Misma lógica throttled (50ms), respeta Emil Kowalski animation patterns
+
+### Hallazgo #3 — Verificación de email en Better Auth ✅
+- `emailVerification.sendOnSignUp: true`, `autoSignInAfterVerification: true`
+- `sendVerificationEmail` callback configurado (usa Brevo)
+- **Requiere `BREVO_API_KEY` real en `.env.local`** para funcionar
+
+### Hallazgo #4 — Brevo transactional email ✅
+- `lib/email.ts`: cliente API v3 de Brevo (POST /v3/smtp/email)
+- Wireado a password reset y email verification en `lib/auth.ts`
+- **Requiere `BREVO_API_KEY` real en `.env.local`** para funcionar
+
+### Hallazgo #5 — Hero animated gradient ✅
+- CSS-only `@keyframes gradient-shift` (background-position 0%→100%→0%, 8s)
+- `motion-safe:animate-gradient-shift`: solo anima si usuario no prefiere reduced-motion
+- Sin JavaScript, sin librerías externas (Lighthouse-safe)
