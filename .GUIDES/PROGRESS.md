@@ -121,9 +121,10 @@ Actualizado: 2026-06-21
 - **Requiere `BREVO_API_KEY` real en `.env.local`** para funcionar
 
 ### Hallazgo #4 — Brevo transactional email ✅
-- `lib/email.ts`: cliente API v3 de Brevo (POST /v3/smtp/email)
+- Email transaccional vía InsForge SDK (`insforge.emails.send()`) en lugar de cliente Brevo directo
+- InsForge resuelve el provider automáticamente (SMTP configurado o cloud relay)
 - Wireado a password reset y email verification en `lib/auth.ts`
-- **Requiere `BREVO_API_KEY` real en `.env.local`** para funcionar
+- **Requiere `INSFORGE_JWT_SECRET` en `.env.local`** (obtener con `npx @insforge/cli secrets get JWT_SECRET`)
 
 ### Hallazgo #5 — Hero animated gradient ✅
 - CSS-only `@keyframes gradient-shift` (background-position 0%→100%→0%, 8s)
