@@ -15,7 +15,6 @@ export interface NavigationItem {
   name: string;
   href: string;
   sectionId?: string;
-  /** If set, this item only shows when the condition matches */
   showOn?: 'always' | 'landing' | 'authenticated' | 'hospital_admin' | 'super_admin';
 }
 
@@ -27,7 +26,7 @@ function getInitials(name: string) {
 
 function UserAvatar({ user }: { user: { name: string; image?: string | null } }) {
   return (
-    <Avatar className="size-8 transition-all duration-200 ease-out">
+    <Avatar className="size-8 transition-transform duration-200 ease-out hover:scale-105">
       <AvatarImage src={user.image ?? undefined} />
       <AvatarFallback className="text-xs bg-primary text-primary-foreground">
         {getInitials(user.name ?? 'U')}
@@ -120,7 +119,6 @@ export function NavBar({ navigationItems }: NavBarProps) {
     }
   }, [isLanding, scrollToSection]);
 
-  /** Filter nav items based on current page and user state */
   const visibleItems = navigationItems.filter((item) => {
     if (!item.showOn || item.showOn === 'always') return true;
     if (item.showOn === 'landing') return isLanding;
@@ -159,17 +157,17 @@ export function NavBar({ navigationItems }: NavBarProps) {
   return (
     <header className={cn(
       "sticky top-0 z-50 transition-transform duration-300",
-      isScrolled && "top-4",
+      isScrolled && "top-3",
       isHidden && "-translate-y-full"
     )}>
       <div className={cn(
         "transition-[background-color,border-radius,box-shadow,border,margin,padding] duration-300",
         isScrolled
-          ? "bg-background/90 border rounded-full shadow-lg backdrop-blur-lg mx-4 md:mx-20"
+          ? "bg-background/90 border rounded-full shadow-lg backdrop-blur-lg mx-6 md:mx-[12%] xl:mx-[16%]"
           : "bg-background/80 border-b backdrop-blur-lg"
       )}>
         <nav className={cn("flex items-center justify-between transition-[padding] duration-300",
-          isScrolled ? "p-3 lg:px-6" : "p-6 lg:px-8"
+          isScrolled ? "p-2.5 lg:px-5" : "p-5 lg:px-8"
         )} aria-label="Global">
 
           {/* Logo */}
@@ -178,13 +176,12 @@ export function NavBar({ navigationItems }: NavBarProps) {
             onClick={(e) => {
               e.preventDefault();
               window.scrollTo({ top: 0, behavior: 'smooth' });
-              // If not on landing page, navigate first then scroll
               if (window.location.pathname !== '/') {
                 window.location.href = '/#';
                 setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
               }
             }}
-            className="flex items-center gap-2 hover:text-primary transition-colors duration-200 ease-out group"
+            className="flex items-center gap-2 hover:text-primary transition-colors duration-200 ease-out group shrink-0"
           >
             <div className="size-8 rounded-lg bg-primary flex items-center justify-center group-hover:scale-105 transition-transform duration-200 ease-out">
               <span className="text-primary-foreground font-bold text-sm">M3</span>
@@ -192,8 +189,8 @@ export function NavBar({ navigationItems }: NavBarProps) {
             <span className="font-semibold text-foreground hidden sm:block">Medicamentum360</span>
           </a>
 
-          {/* Desktop Nav Links */}
-          <ul className="hidden lg:flex items-center gap-6">
+          {/* Desktop Nav Links — left aligned */}
+          <ul className="hidden lg:flex items-center gap-1">
             {visibleItems.map(renderNavLink)}
           </ul>
 
@@ -207,7 +204,7 @@ export function NavBar({ navigationItems }: NavBarProps) {
               <div ref={dropdownRef} className="relative">
                 <button
                   onClick={() => setDropdownOpen(!dropdownOpen)}
-                  className="flex items-center gap-2 hover:bg-accent rounded-full p-1 transition-all duration-200 ease-out active:scale-95"
+                  className="flex items-center gap-2 hover:bg-accent rounded-full p-1 transition-transform duration-200 ease-out active:scale-95"
                   aria-haspopup="true"
                   aria-expanded={dropdownOpen}
                 >
@@ -276,7 +273,7 @@ export function NavBar({ navigationItems }: NavBarProps) {
                 )}
               </div>
             ) : (
-              <Button variant="ghost" size="sm" asChild className="transition-all duration-200 ease-out active:scale-95">
+              <Button variant="ghost" size="sm" asChild className="active:scale-95 transition-transform duration-150">
                 <Link href="/sign-in">Entrar</Link>
               </Button>
             )}
@@ -378,7 +375,7 @@ export function NavBar({ navigationItems }: NavBarProps) {
                       </>
                     ) : (
                       <div className="px-3 py-2 space-y-2">
-                        <Button size="sm" className="w-full transition-all duration-200 ease-out active:scale-95" asChild>
+                        <Button size="sm" className="w-full transition-transform duration-200 ease-out active:scale-95" asChild>
                           <Link href="/sign-up" onClick={() => setMobileOpen(false)}>Registro gratis</Link>
                         </Button>
                         <p className="text-xs text-center text-muted-foreground">

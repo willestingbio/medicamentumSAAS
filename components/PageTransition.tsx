@@ -22,21 +22,19 @@ export function PageTransition({ children, className }: PageTransitionProps) {
       return;
     }
 
-    // Route changed — exit first, then enter
     setTransitionStage('exit');
 
     timeoutRef.current = setTimeout(() => {
       prevPathname.current = pathname;
       setDisplayChildren(children);
       setTransitionStage('enter');
-    }, 200); // exit duration
+    }, 150);
 
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, [pathname, children]);
 
-  // On initial mount, just enter
   useEffect(() => {
     setTransitionStage('enter');
   }, []);
@@ -44,9 +42,9 @@ export function PageTransition({ children, className }: PageTransitionProps) {
   return (
     <div
       className={cn(
-        'transition-all duration-300',
-        transitionStage === 'enter' && 'opacity-100 translate-y-0 blur-0',
-        transitionStage === 'exit' && 'opacity-0 translate-y-2 blur-[2px]',
+        'transition-all duration-250',
+        transitionStage === 'enter' && 'opacity-100 translate-y-0',
+        transitionStage === 'exit' && 'opacity-0 translate-y-1',
         className
       )}
       style={{ transitionTimingFunction: 'cubic-bezier(0.23, 1, 0.32, 1)' }}
