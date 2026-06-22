@@ -128,7 +128,21 @@ Actualizado: 2026-06-22
 7. Redeploy en Vercel confirmando auth + DB funcionan
 
 ## Fase 3 — Marketplace y detalle de producto
-- [ ] No iniciada
+- [x] Página `/productos` con filtros (categoría, precio, orden) y buscador
+- [x] Tabs de categoría: Todos, Cursos, Experiencias VR, Automatizaciones IA
+- [x] ProductCard con badge de tipo, rating, precio con descuento, botón carrito
+- [x] SkeletonCard + SkeletonGrid para estados de carga
+- [x] Página `/productos/[slug]` con layout 2 columnas
+- [x] Breadcrumb: Home → Marketplace → Producto
+- [x] ProductInfoPanel sticky: precio, rating, capacidad, duración, instructor, acciones
+- [x] ProductReviews: lista de reseñas con avatar, rating, comentario
+- [x] RelatedProducts: 3 productos relacionados
+- [ ] Conexión con DB real (productos de InsForge/Prisma)
+- [ ] Búsqueda con Meilisearch
+- [ ] Infinite scroll / paginación
+- [ ] Visor 3D R3F para productos VR
+
+**Estado: Fase 3 ~EN PROGRESO** — UI completa con datos placeholder, falta conexión a DB y Meilisearch
 
 ## Fase 4 — Carrito y checkout (Wompi)
 - [ ] No iniciada (bloqueada por Fase 2.5)
