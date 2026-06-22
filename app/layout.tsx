@@ -3,6 +3,7 @@ import { CookieConsentBanner } from '@/components/cookie-consent/CookieConsentBa
 import { Footer } from '@/components/layout/Footer';
 import { NavBar } from '@/components/layout/NavBar';
 import type { NavigationItem } from '@/components/layout/NavBar';
+import { PageTransition } from '@/components/PageTransition';
 import './globals.css';
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
@@ -51,7 +52,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-screen bg-background flex flex-col">
         <NavBar navigationItems={navigationItems} />
-        <main className="flex-1 page-enter">{children}</main>
+        <main className="flex-1">
+          <PageTransition>{children}</PageTransition>
+        </main>
         <Footer />
         <CookieConsentBanner />
       </body>
