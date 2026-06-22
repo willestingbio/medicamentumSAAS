@@ -7,9 +7,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <div className="hidden lg:flex lg:w-1/2 bg-muted">
         <AuthCarousel />
       </div>
-      {/* Right: Form */}
+      {/* Right: Form — page-enter animates content in */}
       <div className="flex-1 flex items-center justify-center px-4 py-12 lg:px-8">
-        <div className="w-full max-w-sm">{children}</div>
+        <div className="w-full max-w-sm page-enter">{children}</div>
       </div>
     </div>
   );

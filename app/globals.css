@@ -29,11 +29,11 @@
   --radius-sm: calc(var(--radius) - 4px);
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 @layer base {
   :root {
-    /* Light mode - Medicamentum360 brand color: #8127cf → hsl(272 68% 48%) */
     --background: 0 0% 100%;
     --foreground: 240 10% 4%;
     --card: 0 0% 100%;
@@ -89,16 +89,129 @@
     @apply bg-background text-foreground;
   }
 
-  /* Animaciones: solo transform y opacity para rendimiento GPU */
+  /* ===== Keyframe Animations ===== */
+
+  /* Hero animated gradient */
   @keyframes gradient-shift {
     0%, 100% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }
   }
-
   .animate-gradient-shift {
     animation: gradient-shift 8s var(--ease-in-out) infinite;
   }
 
+  /* Scroll reveal — fade in + slide up */
+  @keyframes reveal-up {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .animate-reveal-up {
+    opacity: 0;
+    animation: reveal-up 600ms var(--ease-out) forwards;
+  }
+
+  /* Scroll reveal — fade in */
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  .animate-fade-in {
+    opacity: 0;
+    animation: fade-in 500ms var(--ease-out) forwards;
+  }
+
+  /* Stagger children — each child delays */
+  .stagger-children > * {
+    opacity: 0;
+    animation: reveal-up 500ms var(--ease-out) forwards;
+  }
+  .stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger-children > *:nth-child(2) { animation-delay: 60ms; }
+  .stagger-children > *:nth-child(3) { animation-delay: 120ms; }
+  .stagger-children > *:nth-child(4) { animation-delay: 180ms; }
+  .stagger-children > *:nth-child(5) { animation-delay: 240ms; }
+  .stagger-children > *:nth-child(6) { animation-delay: 300ms; }
+
+  /* Dropdown enter — scale from trigger */
+  @keyframes dropdown-in {
+    from {
+      opacity: 0;
+      transform: scale(0.95) translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+
+  /* Sheet slide in from right */
+  @keyframes slide-in-right {
+    from {
+      opacity: 0;
+      transform: translateX(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  /* Page transition — content enter */
+  @keyframes page-enter {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .page-enter {
+    animation: page-enter 400ms var(--ease-out) forwards;
+  }
+
+  /* Scale in for modals/toasts */
+  @keyframes scale-in {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  .animate-scale-in {
+    animation: scale-in 200ms var(--ease-out) forwards;
+  }
+
+  /* Button press feedback */
+  .btn-press {
+    transition: transform 160ms var(--ease-out);
+  }
+  .btn-press:active {
+    transform: scale(0.97);
+  }
+
+  /* Card hover lift */
+  .card-hover {
+    transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .card-hover:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+    }
+  }
+
+  /* ===== Reduced Motion ===== */
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
@@ -110,6 +223,7 @@
     }
   }
 
+  /* ===== Hover only on fine pointer devices ===== */
   @media (hover: hover) and (pointer: fine) {
     .hoverable:hover {
       /* Hover animations solo para dispositivos con hover real */

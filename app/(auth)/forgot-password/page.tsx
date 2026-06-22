@@ -81,7 +81,7 @@ export default function ForgotPasswordPage() {
               />
             </div>
 
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full btn-press" disabled={loading}>
               {loading ? 'Enviando...' : 'Enviar enlace de recuperación'}
             </Button>
           </form>

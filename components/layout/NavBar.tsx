@@ -15,6 +15,8 @@ export interface NavigationItem {
   name: string;
   href: string;
   sectionId?: string;
+  /** If set, this item only shows when the condition matches */
+  showOn?: 'always' | 'landing' | 'authenticated' | 'hospital_admin' | 'super_admin';
 }
 
 function getInitials(name: string) {
@@ -25,12 +27,19 @@ function getInitials(name: string) {
 
 function UserAvatar({ user }: { user: { name: string; image?: string | null } }) {
   return (
-    <Avatar className="size-8">
+    <Avatar className="size-8 transition-all duration-200 ease-out">
       <AvatarImage src={user.image ?? undefined} />
       <AvatarFallback className="text-xs bg-primary text-primary-foreground">
         {getInitials(user.name ?? 'U')}
       </AvatarFallback>
     </Avatar>
+  );
+}
+
+/** Skeleton placeholder while session loads — prevents "Entrar" flash */
+function UserAvatarSkeleton() {
+  return (
+    <div className="size-8 rounded-full bg-muted animate-pulse" />
   );
 }
 
@@ -46,8 +55,9 @@ export function NavBar({ navigationItems }: NavBarProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const prevScrollY = useRef(0);
   const pathname = usePathname();
+  const isLanding = pathname === '/';
   const isMarketplace = pathname.startsWith('/productos');
-  const { data: session } = authClient.useSession();
+  const { data: session, isPending } = authClient.useSession();
 
   const userRole = (session?.user as any)?.role;
   const isHospitalAdmin = userRole === 'hospital_admin' || userRole === 'super_admin';
@@ -105,14 +115,24 @@ export function NavBar({ navigationItems }: NavBarProps) {
 
   const handleNavClick = useCallback((item: NavigationItem) => {
     setMobileOpen(false);
-    if (item.sectionId && pathname === '/') {
+    if (item.sectionId && isLanding) {
       scrollToSection(item.sectionId);
     }
-  }, [pathname, scrollToSection]);
+  }, [isLanding, scrollToSection]);
+
+  /** Filter nav items based on current page and user state */
+  const visibleItems = navigationItems.filter((item) => {
+    if (!item.showOn || item.showOn === 'always') return true;
+    if (item.showOn === 'landing') return isLanding;
+    if (item.showOn === 'authenticated') return !!session?.user;
+    if (item.showOn === 'hospital_admin') return isHospitalAdmin;
+    if (item.showOn === 'super_admin') return isSuperAdmin;
+    return true;
+  });
 
   const renderNavLink = (item: NavigationItem) => {
     const isActive = pathname === item.href;
-    const isLandingSection = item.sectionId && pathname === '/';
+    const isLandingSection = item.sectionId && isLanding;
 
     return (
       <li key={item.name}>
@@ -125,18 +145,23 @@ export function NavBar({ navigationItems }: NavBarProps) {
             }
           }}
           className={cn(
-            "text-sm font-normal transition-colors hover:text-primary cursor-pointer",
+            "text-sm font-normal transition-colors duration-200 ease-out hover:text-primary cursor-pointer relative group",
             isActive ? "text-primary font-medium" : "text-foreground"
           )}
         >
           {item.name}
+          <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-primary transition-all duration-300 ease-out group-hover:w-full" />
         </a>
       </li>
     );
   };
 
   return (
-    <header className={cn("sticky top-0 z-50 transition-all duration-300", isScrolled && "top-4", isHidden && "-translate-y-full")}>
+    <header className={cn(
+      "sticky top-0 z-50 transition-all duration-300",
+      isScrolled && "top-4",
+      isHidden && "-translate-y-full"
+    )}>
       <div className={cn(
         "transition-all duration-300",
         isScrolled
@@ -148,8 +173,8 @@ export function NavBar({ navigationItems }: NavBarProps) {
         )} aria-label="Global">
 
           {/* Logo */}
-          <a href="/" className="flex items-center gap-2 hover:text-primary transition-colors">
-            <div className="size-8 rounded-lg bg-primary flex items-center justify-center">
+          <a href="/" className="flex items-center gap-2 hover:text-primary transition-colors duration-200 ease-out group">
+            <div className="size-8 rounded-lg bg-primary flex items-center justify-center group-hover:scale-105 transition-transform duration-200 ease-out">
               <span className="text-primary-foreground font-bold text-sm">M3</span>
             </div>
             <span className="font-semibold text-foreground hidden sm:block">Medicamentum360</span>
@@ -157,18 +182,20 @@ export function NavBar({ navigationItems }: NavBarProps) {
 
           {/* Desktop Nav Links */}
           <ul className="hidden lg:flex items-center gap-6">
-            {navigationItems.map(renderNavLink)}
+            {visibleItems.map(renderNavLink)}
           </ul>
 
           {/* Desktop User Area */}
           <div className="hidden lg:flex items-center justify-end gap-3">
             <DarkModeSwitcher />
 
-            {session?.user ? (
+            {isPending ? (
+              <UserAvatarSkeleton />
+            ) : session?.user ? (
               <div ref={dropdownRef} className="relative">
                 <button
                   onClick={() => setDropdownOpen(!dropdownOpen)}
-                  className="flex items-center gap-2 hover:bg-accent rounded-full p-1 transition-colors"
+                  className="flex items-center gap-2 hover:bg-accent rounded-full p-1 transition-all duration-200 ease-out active:scale-95"
                   aria-haspopup="true"
                   aria-expanded={dropdownOpen}
                 >
@@ -177,7 +204,10 @@ export function NavBar({ navigationItems }: NavBarProps) {
 
                 {dropdownOpen && (
                   <div
-                    className="absolute right-0 top-full mt-2 w-56 rounded-md border bg-popover shadow-lg z-50 origin-top-right animate-in fade-in zoom-in-95 duration-150 ease-out"
+                    className="absolute right-0 top-full mt-2 w-56 rounded-md border bg-popover shadow-lg z-50 origin-top-right"
+                    style={{
+                      animation: 'dropdown-in 150ms cubic-bezier(0.23, 1, 0.32, 1) forwards',
+                    }}
                   >
                     <div className="px-3 py-2 border-b">
                       <p className="text-sm font-medium truncate">{session.user.name}</p>
@@ -192,7 +222,7 @@ export function NavBar({ navigationItems }: NavBarProps) {
                       <Link
                         href="/dashboard"
                         onClick={() => setDropdownOpen(false)}
-                        className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors"
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors duration-150 ease-out"
                       >
                         Mi dashboard
                       </Link>
@@ -200,7 +230,7 @@ export function NavBar({ navigationItems }: NavBarProps) {
                         <Link
                           href="/org/employees"
                           onClick={() => setDropdownOpen(false)}
-                          className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors"
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors duration-150 ease-out"
                         >
                           <Building2 className="size-4" />
                           Empleados
@@ -210,7 +240,7 @@ export function NavBar({ navigationItems }: NavBarProps) {
                         <Link
                           href="/admin"
                           onClick={() => setDropdownOpen(false)}
-                          className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors"
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors duration-150 ease-out"
                         >
                           <Shield className="size-4" />
                           Administración
@@ -219,13 +249,13 @@ export function NavBar({ navigationItems }: NavBarProps) {
                       <Link
                         href="/configuracion"
                         onClick={() => setDropdownOpen(false)}
-                        className="block px-3 py-1.5 text-sm hover:bg-accent transition-colors"
+                        className="block px-3 py-1.5 text-sm hover:bg-accent transition-colors duration-150 ease-out"
                       >
                         Configuración
                       </Link>
                       <button
                         onClick={() => { signOut(); setDropdownOpen(false); }}
-                        className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-accent transition-colors"
+                        className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-accent transition-colors duration-150 ease-out"
                       >
                         Cerrar sesión
                       </button>
@@ -234,7 +264,7 @@ export function NavBar({ navigationItems }: NavBarProps) {
                 )}
               </div>
             ) : (
-              <Button variant="ghost" size="sm" asChild>
+              <Button variant="ghost" size="sm" asChild className="transition-all duration-200 ease-out active:scale-95">
                 <Link href="/sign-in">Entrar</Link>
               </Button>
             )}
@@ -245,7 +275,7 @@ export function NavBar({ navigationItems }: NavBarProps) {
             <DarkModeSwitcher />
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
               <SheetTrigger asChild>
-                <button type="button" className="text-muted-foreground hover:text-foreground p-2">
+                <button type="button" className="text-muted-foreground hover:text-foreground p-2 transition-colors duration-200 ease-out active:scale-95">
                   <span className="sr-only">Abrir menú</span>
                   <Menu className="size-6" />
                 </button>
@@ -256,19 +286,23 @@ export function NavBar({ navigationItems }: NavBarProps) {
                 </SheetHeader>
                 <div className="mt-6 flow-root">
                   <ul className="space-y-1 py-4 border-t">
-                    {navigationItems.map((item) => (
-                      <li key={item.name}>
+                    {visibleItems.map((item, i) => (
+                      <li
+                        key={item.name}
+                        style={{ animationDelay: `${i * 50}ms` }}
+                        className="opacity-0 animate-[slide-in-right_300ms_ease-out_forwards]"
+                      >
                         <a
-                          href={item.sectionId && pathname === '/' ? `#${item.sectionId}` : item.href}
+                          href={item.sectionId && isLanding ? `#${item.sectionId}` : item.href}
                           onClick={(e) => {
-                            if (item.sectionId && pathname === '/') {
+                            if (item.sectionId && isLanding) {
                               e.preventDefault();
                               handleNavClick(item);
                             } else {
                               setMobileOpen(false);
                             }
                           }}
-                          className="block rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent transition-colors"
+                          className="block rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent transition-colors duration-150 ease-out"
                         >
                           {item.name}
                         </a>
@@ -276,7 +310,12 @@ export function NavBar({ navigationItems }: NavBarProps) {
                     ))}
                   </ul>
                   <div className="py-4 border-t space-y-1">
-                    {session?.user ? (
+                    {isPending ? (
+                      <div className="px-3 py-2 space-y-2">
+                        <div className="h-9 w-full rounded-md bg-muted animate-pulse" />
+                        <div className="h-4 w-32 mx-auto rounded bg-muted animate-pulse" />
+                      </div>
+                    ) : session?.user ? (
                       <>
                         <div className="px-3 py-2">
                           <p className="text-sm font-medium">{session.user.name}</p>
@@ -290,7 +329,7 @@ export function NavBar({ navigationItems }: NavBarProps) {
                         <Link
                           href="/dashboard"
                           onClick={() => setMobileOpen(false)}
-                          className="block rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent transition-colors"
+                          className="block rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent transition-colors duration-150 ease-out"
                         >
                           Mi dashboard
                         </Link>
@@ -298,7 +337,7 @@ export function NavBar({ navigationItems }: NavBarProps) {
                           <Link
                             href="/org/employees"
                             onClick={() => setMobileOpen(false)}
-                            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent transition-colors"
+                            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent transition-colors duration-150 ease-out"
                           >
                             <Building2 className="size-4" />
                             Empleados
@@ -308,7 +347,7 @@ export function NavBar({ navigationItems }: NavBarProps) {
                           <Link
                             href="/admin"
                             onClick={() => setMobileOpen(false)}
-                            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent transition-colors"
+                            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent transition-colors duration-150 ease-out"
                           >
                             <Shield className="size-4" />
                             Administración
@@ -316,14 +355,14 @@ export function NavBar({ navigationItems }: NavBarProps) {
                         )}
                         <button
                           onClick={() => { signOut(); setMobileOpen(false); }}
-                          className="w-full text-left rounded-lg px-3 py-2 text-sm text-destructive hover:bg-accent transition-colors"
+                          className="w-full text-left rounded-lg px-3 py-2 text-sm text-destructive hover:bg-accent transition-colors duration-150 ease-out"
                         >
                           Cerrar sesión
                         </button>
                       </>
                     ) : (
                       <div className="px-3 py-2 space-y-2">
-                        <Button size="sm" className="w-full" asChild>
+                        <Button size="sm" className="w-full transition-all duration-200 ease-out active:scale-95" asChild>
                           <Link href="/sign-up" onClick={() => setMobileOpen(false)}>Registro gratis</Link>
                         </Button>
                         <p className="text-xs text-center text-muted-foreground">

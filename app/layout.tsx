@@ -29,9 +29,9 @@ export const metadata: Metadata = {
 
 const navigationItems: NavigationItem[] = [
   { name: 'Nosotros', href: '/', sectionId: 'nosotros' },
-  { name: 'Ejemplos', href: '/', sectionId: 'ejemplos' },
-  { name: 'Blog', href: '/', sectionId: 'blog' },
-  { name: ' Marketplace', href: '/productos' },
+  { name: 'Ejemplos', href: '/', sectionId: 'ejemplos', showOn: 'landing' },
+  { name: 'Blog', href: '/', sectionId: 'blog', showOn: 'landing' },
+  { name: 'Marketplace', href: '/productos' },
 ];
 
 const jsonLd = {
@@ -51,7 +51,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-screen bg-background flex flex-col">
         <NavBar navigationItems={navigationItems} />
-        <main className="flex-1">{children}</main>
+        <main className="flex-1 page-enter">{children}</main>
         <Footer />
         <CookieConsentBanner />
       </body>
