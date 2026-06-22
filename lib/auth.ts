@@ -1,7 +1,6 @@
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { prisma } from './prisma';
-import { createAdminClient } from '@insforge/sdk';
 
 /**
  * Better Auth server configuration.
@@ -17,15 +16,30 @@ import { createAdminClient } from '@insforge/sdk';
  * 
  * Documentación: https://better-auth.com/docs
  */
-/**
- * Cliente InsForge admin server-side para enviar emails transaccionales.
- * Usa createAdminClient con la API key para privilegios de servicio.
- */
-function insforgeServerClient() {
-  return createAdminClient({
-    baseUrl: process.env.NEXT_PUBLIC_INSFORGE_BASE_URL || '',
-    apiKey: process.env.INSFORGE_JWT_SECRET || '',
-  });
+async function sendEmail(to: string, subject: string, html: string) {
+  const apiKey = process.env.BREVO_API_KEY;
+  if (!apiKey) {
+    console.warn('[Auth] BREVO_API_KEY not configured — email skipped');
+    return;
+  }
+  try {
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': apiKey,
+      },
+      body: JSON.stringify({
+        sender: { name: 'Medicamentum360', email: 'noreply@medicamentum360.com' },
+        to: [{ email: to }],
+        subject,
+        htmlContent: html,
+      }),
+    });
+    if (!res.ok) console.warn('[Auth] Brevo email failed:', res.status);
+  } catch (e) {
+    console.warn('[Auth] Email send skipped:', e instanceof Error ? e.message : e);
+  }
 }
 
 export const auth = betterAuth({
@@ -41,19 +55,14 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     sendResetPassword: async ({ user, url }) => {
-      try {
-        const insforge = insforgeServerClient();
-        await insforge.emails.send({
-          to: user.email,
-          subject: 'Restablece tu contraseña — Medicamentum360',
-          html: `<p>Hola ${user.name ?? ''},</p>
+      await sendEmail(
+        user.email,
+        'Restablece tu contraseña — Medicamentum360',
+        `<p>Hola ${user.name ?? ''},</p>
 <p>Has solicitado restablecer tu contraseña. Haz clic en el siguiente enlace:</p>
 <p><a href="${url}">Restablecer contraseña</a></p>
 <p>Si no solicitaste esto, ignora este mensaje.</p>`,
-        });
-      } catch {
-        console.warn('[Auth] Email send skipped');
-      }
+      );
     },
   },
 
@@ -61,18 +70,13 @@ export const auth = betterAuth({
     sendOnSignUp: false,
     autoSignInAfterVerification: true,
     sendVerificationEmail: async ({ user, url }) => {
-      try {
-        const insforge = insforgeServerClient();
-        await insforge.emails.send({
-          to: user.email,
-          subject: 'Verifica tu email — Medicamentum360',
-          html: `<p>Hola ${user.name ?? ''},</p>
+      await sendEmail(
+        user.email,
+        'Verifica tu email — Medicamentum360',
+        `<p>Hola ${user.name ?? ''},</p>
 <p>Gracias por registrarte. Haz clic en el siguiente enlace para verificar tu email:</p>
 <p><a href="${url}">Verificar email</a></p>`,
-        });
-      } catch {
-        console.warn('[Auth] Email send skipped');
-      }
+      );
     },
   },
 
