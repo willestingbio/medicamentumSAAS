@@ -192,8 +192,8 @@ export const NavBar = memo(function NavBar({ navigationItems }: NavBarProps) {
 
           {/* Search bar — only on marketplace, expands on hover */}
           {isMarketplace && (
-            <div className="hidden lg:flex items-center mx-4 group/search">
-              <div className="relative flex items-center">
+            <div className="hidden lg:flex items-center mx-4 flex-1 group/search">
+              <div className="relative flex items-center w-full max-w-[180px] group-focus-within/search:max-w-none transition-all duration-300 ease-out">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
                 <input
                   type="text"
@@ -211,7 +211,7 @@ export const NavBar = memo(function NavBar({ navigationItems }: NavBarProps) {
                       router.push(`/productos?${params.toString()}`);
                     }
                   }}
-                  className="w-10 group-focus-within/search:w-64 pl-9 pr-3 py-1.5 rounded-full border bg-background/50 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:bg-background transition-all duration-300 ease-out placeholder-transparent focus:placeholder:text-muted-foreground"
+                  className="w-full pl-9 pr-3 py-1.5 rounded-full border bg-background/50 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:bg-background transition-all duration-300 ease-out placeholder-transparent focus:placeholder:text-muted-foreground"
                 />
               </div>
             </div>
