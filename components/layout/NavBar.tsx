@@ -2,7 +2,7 @@
 import { Menu, Building2, Shield } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -35,18 +35,11 @@ function UserAvatar({ user }: { user: { name: string; image?: string | null } })
   );
 }
 
-/** Skeleton placeholder while session loads — prevents "Entrar" flash */
-function UserAvatarSkeleton() {
-  return (
-    <div className="size-8 rounded-full bg-muted animate-pulse" />
-  );
-}
-
 interface NavBarProps {
   navigationItems: NavigationItem[];
 }
 
-export function NavBar({ navigationItems }: NavBarProps) {
+export const NavBar = memo(function NavBar({ navigationItems }: NavBarProps) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isHidden, setIsHidden] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -143,12 +136,12 @@ export function NavBar({ navigationItems }: NavBarProps) {
             }
           }}
           className={cn(
-            "text-sm font-normal transition-colors duration-200 ease-out hover:text-primary cursor-pointer relative group",
+            "text-sm font-normal transition-colors duration-200 ease-out hover:text-primary cursor-pointer relative group px-2 py-1",
             isActive ? "text-primary font-medium" : "text-foreground"
           )}
         >
           {item.name}
-          <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-primary transition-all duration-300 ease-out group-hover:w-full" />
+          <span className="absolute -bottom-1 left-2 right-2 h-0.5 bg-primary scale-x-0 transition-transform duration-300 ease-out origin-left group-hover:scale-x-100" />
         </a>
       </li>
     );
@@ -166,7 +159,7 @@ export function NavBar({ navigationItems }: NavBarProps) {
           ? "bg-background/90 border rounded-full shadow-lg backdrop-blur-lg mx-6 md:mx-[12%] xl:mx-[16%]"
           : "bg-background/80 border-b backdrop-blur-lg"
       )}>
-        <nav className={cn("flex items-center justify-between transition-[padding] duration-300",
+        <nav className={cn("flex items-center transition-[padding] duration-300",
           isScrolled ? "p-2.5 lg:px-5" : "p-5 lg:px-8"
         )} aria-label="Global">
 
@@ -181,7 +174,7 @@ export function NavBar({ navigationItems }: NavBarProps) {
                 setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
               }
             }}
-            className="flex items-center gap-2 hover:text-primary transition-colors duration-200 ease-out group shrink-0"
+            className="flex items-center gap-2 hover:text-primary transition-colors duration-200 ease-out group shrink-0 mr-8"
           >
             <div className="size-8 rounded-lg bg-primary flex items-center justify-center group-hover:scale-105 transition-transform duration-200 ease-out">
               <span className="text-primary-foreground font-bold text-sm">M3</span>
@@ -194,12 +187,15 @@ export function NavBar({ navigationItems }: NavBarProps) {
             {visibleItems.map(renderNavLink)}
           </ul>
 
+          {/* Spacer */}
+          <div className="flex-1" />
+
           {/* Desktop User Area */}
-          <div className="hidden lg:flex items-center justify-end gap-3">
+          <div className="hidden lg:flex items-center gap-3">
             <DarkModeSwitcher />
 
             {isPending ? (
-              <UserAvatarSkeleton />
+              <div className="size-8 rounded-full bg-muted animate-pulse" />
             ) : session?.user ? (
               <div ref={dropdownRef} className="relative">
                 <button
@@ -395,4 +391,4 @@ export function NavBar({ navigationItems }: NavBarProps) {
       </div>
     </header>
   );
-}
+});

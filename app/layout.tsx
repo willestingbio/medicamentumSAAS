@@ -49,6 +49,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es" suppressHydrationWarning>
       <head>
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+        {/* Prevent dark mode flash: apply class before React hydrates */}
+        <script dangerouslySetInnerHTML={{ __html: `
+          (function() {
+            try {
+              var mode = localStorage.getItem('color-theme');
+              if (mode === 'dark' || (!mode && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+              }
+            } catch(e) {}
+          })();
+        `}} />
       </head>
       <body className="min-h-screen bg-background flex flex-col">
         <NavBar navigationItems={navigationItems} />
