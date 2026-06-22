@@ -110,7 +110,22 @@ Actualizado: 2026-06-22
 - [x] `.gitignore` revisado: incluye `.env*`, `docker/output/`, `node_modules/`, `.next/`, `*.log`
 - [ ] Conectividad InsForge + Vercel (serverless) — requiere secrets en GitHub + Vercel env vars
 
-**Estado: Fase 2.5 ~EN PROGRESO** — CI/CD configurado, falta conectar Vercel con InsForge (secrets + env vars)
+**Estado: Fase 2.5 ~EN PROGRESO** — CI/CD configurado, falta conectar Vercel con InsForge
+
+**Pendientes Fase 2.5:**
+1. Conectar repo GitHub con Vercel (auto al hacer push)
+2. Agregar secrets en GitHub repo → Settings → Secrets → Actions:
+   - `INSFORGE_API_KEY` (obtener de `.insforge/project.json`)
+   - `INSFORGE_PROJECT_URL` (obtener del dashboard InsForge)
+3. Agregar variables de entorno en Vercel → Project Settings → Environment Variables:
+   - `DATABASE_URL`, `DIRECT_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`
+   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+   - `MOODLE_WS_TOKEN`, `WOMPI_PUBLIC_KEY`, `WOMPI_PRIVATE_KEY`, `WOMPI_EVENTS_SECRET`
+   - `INSFORGE_JWT_SECRET`
+4. Verificar que `BETTER_AUTH_URL` apunte a la URL de Vercel (no localhost)
+5. Verificar `trustedOrigins` en `lib/auth.ts` incluya dominio de Vercel
+6. Verificar Google Cloud Console: redirect URI incluya `https://<dominio-vercel>/api/auth/callback/google`
+7. Redeploy en Vercel confirmando auth + DB funcionan
 
 ## Fase 3 — Marketplace y detalle de producto
 - [ ] No iniciada
