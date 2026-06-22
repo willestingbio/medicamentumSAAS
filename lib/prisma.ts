@@ -5,11 +5,15 @@ import { rlsClaimsStore } from './rls-store';
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
 function createPrisma() {
+  // Fix SSL warning: upgrade require → verify-full
+  const url = (process.env.DATABASE_URL || '')
+    .replace('sslmode=require', 'sslmode=verify-full');
+
   const base = new PrismaClient({
-    adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+    adapter: new PrismaPg({ connectionString: url }),
     log:
       process.env.NODE_ENV === 'development'
-        ? ['query', 'error', 'warn']
+        ? ['error', 'warn']
         : ['error'],
   });
 

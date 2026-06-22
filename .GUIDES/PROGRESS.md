@@ -136,11 +136,15 @@ Actualizado: 2026-06-22
 - [x] Breadcrumb: Home → Marketplace → Producto
 - [x] ProductInfoPanel sticky: precio, rating, capacidad, duración, instructor, acciones
 - [x] ProductReviews: lista de reseñas con avatar, rating, comentario
-- [x] RelatedProducts: 3 productos relacionados
+- [x] RelatedProducts: 3 productos relacionados (desde DB)
 - [x] Conexión con DB real (Server Actions: getProducts, getProductBySlug, getRelatedProducts)
 - [x] Búsqueda con Meilisearch (lib/meili.ts, fallback a DB si no disponible)
 - [x] Infinite scroll / paginación (IntersectionObserver + load more)
 - [x] Visor 3D R3F para productos VR (React Three Fiber + Drei + OrbitControls + autoRotate)
+- [x] Search bar en NavBar para marketplace (UX_UI.md §3.1)
+- [x] Sort dropdown personalizado (sin select nativo feo)
+- [x] Seed script con 9 productos de ejemplo (prisma/seed.ts)
+- [x] SSL warning fix (sslmode=require → verify-full en runtime)
 
 **Estado: Fase 3 COMPLETA ✅** — marketplace con DB, búsqueda, infinite scroll, visor 3D
 

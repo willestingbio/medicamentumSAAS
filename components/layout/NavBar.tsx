@@ -1,7 +1,7 @@
 'use client';
-import { Menu, Building2, Shield } from 'lucide-react';
+import { Menu, Building2, Shield, Search } from 'lucide-react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -47,8 +47,11 @@ export const NavBar = memo(function NavBar({ navigationItems }: NavBarProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const prevScrollY = useRef(0);
   const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const isLanding = pathname === '/';
   const isMarketplace = pathname.startsWith('/productos');
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const { data: session } = authClient.useSession();
 
   const userRole = (session?.user as any)?.role;
@@ -186,6 +189,33 @@ export const NavBar = memo(function NavBar({ navigationItems }: NavBarProps) {
           <ul className="hidden lg:flex items-center gap-1">
             {visibleItems.map(renderNavLink)}
           </ul>
+
+          {/* Search bar — only on marketplace */}
+          {isMarketplace && (
+            <div className="hidden lg:flex items-center flex-1 max-w-xs mx-4">
+              <div className="relative w-full">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Buscar..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const params = new URLSearchParams(searchParams.toString());
+                      if (searchQuery) {
+                        params.set('search', searchQuery);
+                      } else {
+                        params.delete('search');
+                      }
+                      router.push(`/productos?${params.toString()}`);
+                    }
+                  }}
+                  className="w-full pl-9 pr-3 py-1.5 rounded-full border bg-background/50 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:bg-background transition-all"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Spacer */}
           <div className="flex-1" />
