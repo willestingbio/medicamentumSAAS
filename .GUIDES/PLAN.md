@@ -200,9 +200,6 @@ Fase 1 ──► Fase 2 ──► Fase 2.5 (VPS) ──► Fase 3 ──► Fase
 
 ---
 
-## §13. PROGRESS.md — actualización pendiente
+## §13. Desviaciones adicionales (VPS)
 
-El `PROGRESS.md` actual tiene referencias a InsForge e InsForge CLI que deben actualizarse:
-- Reemplazar `npx @insforge/cli db query` → `npx prisma migrate deploy`
-- Eliminar el hallazgo del bridge JWT como requisito activo (ya no se usa)
-- Añadir checklist de Fase 2.5 VPS (los items de arriba)
+Ver desviaciones en §0 y en `PROGRESS.md` por fase.
