@@ -100,7 +100,17 @@ Actualizado: 2026-06-22
 2. Password strength: PLAN.md sugiere `@zxcvbn-ts/core`; implementado con `zxcvbn` original (ya funcionando, sin breaking changes).
 
 ## Fase 2.5 — CI/CD, Seguridad de Repositorio y Despliegue
-- [ ] No iniciada (transversal, bloquea Fase 4)
+- [x] Vitest configurado (jsdom, setup con @testing-library/jest-dom, path aliases)
+- [x] GitHub Actions CI: typecheck + lint + vitest + build en cada push/PR (`.github/workflows/ci.yml`)
+- [x] Playwright E2E: configurado con chromium, tests de landing + auth + checkout skeleton (`.github/workflows/e2e.yml`)
+- [x] axe-core WCAG 2.1 AA: test de accesibilidad en CI para /, /sign-in, /sign-up, /productos (`.github/workflows/accessibility.yml`)
+- [x] RLS isolation test automatizado en CI: workflow manual/PR con secrets de InsForge (`.github/workflows/rls-test.yml`)
+- [x] Vercel Preview Deployments: `vercel.json` con build command que incluye `prisma generate`
+- [x] Scripts npm: `test`, `test:watch`, `test:e2e`, `test:a11y`
+- [x] `.gitignore` revisado: incluye `.env*`, `docker/output/`, `node_modules/`, `.next/`, `*.log`
+- [ ] Conectividad InsForge + Vercel (serverless) — requiere secrets en GitHub + Vercel env vars
+
+**Estado: Fase 2.5 ~EN PROGRESO** — CI/CD configurado, falta conectar Vercel con InsForge (secrets + env vars)
 
 ## Fase 3 — Marketplace y detalle de producto
 - [ ] No iniciada

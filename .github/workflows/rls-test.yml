@@ -1,0 +1,50 @@
+name: RLS Isolation Test
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'prisma/schema.prisma'
+      - 'migrations/**'
+      - 'lib/auth.ts'
+      - 'lib/rls-store.ts'
+
+jobs:
+  rls-test:
+    name: RLS Cross-Org Isolation
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Run RLS isolation test
+        env:
+          INSFORGE_API_KEY: ${{ secrets.INSFORGE_API_KEY }}
+          INSFORGE_PROJECT_URL: ${{ secrets.INSFORGE_PROJECT_URL }}
+        run: |
+          echo "Running RLS isolation test against InsForge..."
+          node -e "
+            const { execSync } = require('child_process');
+            const fs = require('fs');
+            const sql = fs.readFileSync('tests/rls-isolation-test.sql', 'utf8');
+            
+            // Execute via InsForge CLI
+            try {
+              const result = execSync(
+                'npx @insforge/cli db query --file tests/rls-isolation-test.sql',
+                { encoding: 'utf8', timeout: 30000 }
+              );
+              console.log(result);
+              console.log('✅ RLS isolation test passed');
+            } catch (err) {
+              console.error('❌ RLS isolation test failed');
+              console.error(err.stderr || err.message);
+              process.exit(1);
+            }
+          "
