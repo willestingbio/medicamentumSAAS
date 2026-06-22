@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { authClient } from '@/lib/auth-client';
+import { checkRateLimit } from '@/lib/rate-limit';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -35,6 +36,11 @@ export default function SignInPage() {
     setError(null);
     setLoading(true);
     try {
+      const rl = checkRateLimit(`signin:${data.email}`, 5, 60_000);
+      if (!rl.allowed) {
+        setError(`Demasiados intentos. Intenta de nuevo en ${Math.ceil(rl.resetIn / 1000)} segundos.`);
+        return;
+      }
       const { error: authError } = await authClient.signIn.email({
         email: data.email,
         password: data.password,
@@ -108,11 +114,6 @@ export default function SignInPage() {
           {errors.password && (
             <p className="text-xs text-destructive">{errors.password.message}</p>
           )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <input id="remember" type="checkbox" className="size-4 rounded border-input accent-primary" />
-          <Label htmlFor="remember" className="text-sm font-normal">Recordar contraseña</Label>
         </div>
 
         <Button type="submit" className="w-full" disabled={loading}>

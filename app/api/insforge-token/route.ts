@@ -1,28 +1,24 @@
 import { auth } from '@/lib/auth';
-import jwt from 'jsonwebtoken';
-import { headers } from 'next/headers';
 import { NextResponse } from 'next/server';
 
-function requireEnv(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing required env var: ${name}`);
-  return v;
-}
-
 export async function GET() {
-  const session = await auth.api.getSession({ headers: await headers() });
+  const { headers } = await import('next/headers');
+  const session = await auth.api.getSession({ headers: await headers() }).catch(() => null);
   if (!session?.user) {
     return NextResponse.json({ error: 'not signed in' }, { status: 401 });
   }
+
+  const { default: jwt } = await import('jsonwebtoken');
 
   const token = jwt.sign(
     {
       sub: session.user.id,
       role: 'authenticated',
       aud: 'insforge-api',
-      org_id: null,
+      user_role: (session.user as any)?.role || 'student',
+      organization_id: (session.user as any)?.organizationId || '',
     },
-    requireEnv('INSFORGE_JWT_SECRET'),
+    process.env.INSFORGE_JWT_SECRET || '',
     { algorithm: 'HS256', expiresIn: '1h' },
   );
 

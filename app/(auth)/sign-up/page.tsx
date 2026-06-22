@@ -3,13 +3,16 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import zxcvbn from 'zxcvbn';
 import { authClient } from '@/lib/auth-client';
+import { getOrgDetails, linkUserToOrganization } from '@/lib/actions/organization';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Building2 } from 'lucide-react';
 
 const signUpSchema = z
   .object({
@@ -31,13 +34,7 @@ type SignUpForm = z.infer<typeof signUpSchema>;
 
 function passwordStrength(password: string): { score: number; label: string; color: string } {
   if (!password) return { score: 0, label: '', color: '' };
-  let score = 0;
-  if (password.length >= 8) score++;
-  if (/[A-Z]/.test(password)) score++;
-  if (/[a-z]/.test(password)) score++;
-  if (/[0-9]/.test(password)) score++;
-  if (/[^A-Za-z0-9]/.test(password)) score++;
-
+  const result = zxcvbn(password);
   const map = [
     { label: 'Muy débil', color: 'bg-destructive' },
     { label: 'Débil', color: 'bg-destructive' },
@@ -45,13 +42,39 @@ function passwordStrength(password: string): { score: number; label: string; col
     { label: 'Fuerte', color: 'bg-lime-500' },
     { label: 'Muy fuerte', color: 'bg-green-500' },
   ];
-  return { score, ...map[Math.min(score, 4)] };
+  return { score: result.score, ...map[result.score] };
+}
+
+interface OrganizationInfo {
+  id: string;
+  name: string;
 }
 
 export default function SignUpPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const orgCode = searchParams.get('org_code');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [organization, setOrganization] = useState<OrganizationInfo | null>(null);
+  const [orgLoading, setOrgLoading] = useState(false);
+  const [orgError, setOrgError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (orgCode) {
+      setOrgLoading(true);
+      getOrgDetails(orgCode)
+        .then((org) => {
+          if (org) {
+            setOrganization(org);
+          } else {
+            setOrgError('Código de invitación inválido');
+          }
+        })
+        .catch(() => setOrgError('Error al validar el código'))
+        .finally(() => setOrgLoading(false));
+    }
+  }, [orgCode]);
 
   const {
     register,
@@ -76,9 +99,20 @@ export default function SignUpPage() {
       });
       if (authError) {
         setError(authError.message || 'Error al crear la cuenta');
+        setLoading(false);
         return;
       }
-      router.push('/');
+
+      if (orgCode) {
+        const linkResult = await linkUserToOrganization(orgCode);
+        if (linkResult.error) {
+          setError(linkResult.error);
+          setLoading(false);
+          return;
+        }
+      }
+
+      router.push('/dashboard');
       router.refresh();
     } catch {
       setError('Error de conexión. Intenta de nuevo.');
@@ -95,8 +129,27 @@ export default function SignUpPage() {
     <div className="space-y-6">
       <div className="text-center">
         <h1 className="text-2xl font-bold text-foreground">Crear cuenta</h1>
-        <p className="text-sm text-muted-foreground mt-1">Únete a Medicamentum360</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          {organization
+            ? `Uniendote a ${organization.name}`
+            : 'Únete a Medicamentum360'}
+        </p>
       </div>
+
+      {organization && (
+        <div className="flex items-center gap-2 rounded-md bg-primary/10 p-3 text-sm">
+          <Building2 className="size-4 text-primary" />
+          <span className="text-foreground">
+            Serás añadido como empleado de <strong>{organization.name}</strong>
+          </span>
+        </div>
+      )}
+
+      {orgError && (
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {orgError}
+        </div>
+      )}
 
       <Button variant="outline" className="w-full gap-2" onClick={handleGoogleSignIn}>
         <svg className="size-4" viewBox="0 0 24 24" aria-hidden="true">
@@ -202,8 +255,8 @@ export default function SignUpPage() {
           <p className="text-xs text-destructive">{errors.acceptTerms.message}</p>
         )}
 
-        <Button type="submit" className="w-full" disabled={loading}>
-          {loading ? 'Creando cuenta...' : 'Crear cuenta'}
+        <Button type="submit" className="w-full" disabled={loading || orgLoading}>
+          {loading ? 'Creando cuenta...' : orgLoading ? 'Validando...' : 'Crear cuenta'}
         </Button>
       </form>
 

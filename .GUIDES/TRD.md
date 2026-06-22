@@ -36,6 +36,19 @@ Stack confirmado en sesiones previas — este documento detalla la implementaci�
                               └───────────────────┘
 ```
 
+### 1.1 Qué se despliega dónde (aclaración explícita — fuente de confusión real ya detectada)
+
+InsForge **no es una plataforma de hosting de aplicaciones**. No hay nada que "desplegar" ahí. Es exclusivamente un proveedor de infraestructura backend:
+
+| Pieza | Dónde vive / se despliega | Qué NO es |
+|---|---|---|
+| Aplicación Next.js (páginas, Server Actions, Route Handlers, webhooks) | **Vercel** (o equivalente compatible con App Router) | No vive en InsForge. InsForge no ejecuta tu código de aplicación. |
+| Base de datos Postgres + RLS | **InsForge** | Solo expone connection strings (`DATABASE_URL`/`DIRECT_URL`) que la app desplegada en Vercel consume desde afuera. |
+| Storage (avatares, certificados, facturas) | **InsForge Storage** | Igual que la DB: la app en Vercel le habla por API/SDK, no "vive" dentro de InsForge. |
+| Moodle | `lms.medicamentum360.com`, su propio servidor (o el contenedor Docker local en desarrollo) | Independiente de Vercel e InsForge por completo. |
+
+La relación es siempre: **Vercel aloja y ejecuta la app → la app se conecta hacia afuera a InsForge (DB/Storage), Moodle, Wompi, Meilisearch y Brevo usando credenciales en variables de entorno.** Nunca al revés. Si en algún punto el flujo de trabajo intenta "desplegar en InsForge", es un error de modelo mental — no existe ese paso.
+
 ## 2. Stack tecnológico
 
 | Capa | Tecnología | Notas |
@@ -79,141 +92,260 @@ model Organization {
   id        String   @id @default(cuid())
   name      String
   nit       String?
+  orgCode   String   @unique // código de invitación único por organización
   createdAt DateTime @default(now())
-  users     User[]
-  orders    Order[]
+  updatedAt DateTime @updatedAt
+
+  users       User[]
+  orders      Order[]
+  invitations OrganizationInvitation[]
+
+  @@map("organizations")
+}
+
+model Plan {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  priceCents  Int
+  features    String[] // array de características incluidas
+  recommended Boolean  @default(false)
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("plans")
+}
+
+model OrganizationInvitation {
+  id              String       @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email           String
+  role            Role         @default(student)
+  orgCode         String       @unique // código compartido para todos los invitados de esta org
+  invitedByUserId String
+  expiresAt       DateTime
+  accepted        Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+
+  @@index([organizationId, email])
+  @@map("organization_invitations")
 }
 
 model User {
   id             String        @id @default(cuid())
   email          String        @unique
   name           String
-  lastName       String
+  lastName       String?
+  emailVerified  Boolean       @default(false)
+  image          String?
   role           Role          @default(student)
   organizationId String?
-  organization   Organization? @relation(fields: [organizationId], references: [id])
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   moodleUserId   Int?          @unique  // mapeo cuenta espejo en Moodle
   profilePicUrl  String?
   specialty      String?
   locale         String        @default("es")
   theme          String        @default("system")
   createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
   enrollments    Enrollment[]
   orders         Order[]
   cartItems      CartItem[]
   certificates   Certificate[]
   reviews        Review[]
+  calendarEvents CalendarEvent[]
+  sessions       Session[]
+  accounts       Account[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("verification")
 }
 
 model Product {
-  id           String      @id @default(cuid())
-  type         ProductType
-  title        String
-  slug         String      @unique
-  description  String
-  priceCents   Int
-  discountCents Int?
-  coverImageUrl String?
+  id             String      @id @default(cuid())
+  type           ProductType
+  title          String
+  slug           String      @unique
+  description    String
+  priceCents     Int
+  discountCents  Int?
+  coverImageUrl  String?
   moodleCourseId Int?      // null si type = vr_experience o ai_automation
-  vrAssetUrl   String?     // modelo/escena para preview R3F
-  capacity     Int?        // cupo restante para cursos con plazas limitadas
-  published    Boolean     @default(false)
-  createdAt    DateTime    @default(now())
-  enrollments  Enrollment[]
-  orderItems   OrderItem[]
-  reviews      Review[]
+  vrAssetUrl     String?     // modelo/escena para preview R3F
+  capacity       Int?        // cupo restante para cursos con plazas limitadas
+  published      Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  enrollments Enrollment[]
+  orderItems  OrderItem[]
+  reviews     Review[]
+
+  @@map("products")
 }
 
 model Enrollment {
-  id            String   @id @default(cuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id])
-  productId     String
-  product       Product  @relation(fields: [productId], references: [id])
-  progressPct   Int      @default(0)
-  status        String   @default("not_started") // not_started | in_progress | completed
-  moodleEnrolId Int?
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  progressPct    Int       @default(0)
+  status         String    @default("not_started") // not_started | in_progress | completed
+  moodleEnrolId  Int?
   lastAccessedAt DateTime?
-  createdAt     DateTime @default(now())
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@unique([userId, productId])
+  @@map("enrollments")
 }
 
 model Cart {
-  id        String     @id @default(cuid())
-  userId    String?    @unique // null = invitado, identificado por cookie/session token
-  guestToken String?   @unique
-  items     CartItem[]
-  updatedAt DateTime   @updatedAt
+  id         String     @id @default(cuid())
+  userId     String?    @unique // null = invitado, identificado por cookie/session token
+  guestToken String?    @unique
+  items      CartItem[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@map("carts")
 }
 
 model CartItem {
-  id        String  @id @default(cuid())
+  id        String   @id @default(cuid())
   cartId    String
-  cart      Cart    @relation(fields: [cartId], references: [id])
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
   productId String
-  quantity  Int     @default(1)
+  quantity  Int      @default(1)
   userId    String?
-  user      User?   @relation(fields: [userId], references: [id])
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("cart_items")
 }
 
 model Order {
-  id              String      @id @default(cuid())
-  userId          String
-  user            User        @relation(fields: [userId], references: [id])
-  organizationId  String?
-  organization    Organization? @relation(fields: [organizationId], references: [id])
-  status          OrderStatus @default(pending)
-  subtotalCents   Int
-  taxCents        Int
-  totalCents      Int
-  billingDocType  String      // NIT | CC
-  billingDocId    String
-  wompiTransactionId String?  @unique
-  items           OrderItem[]
-  createdAt       DateTime    @default(now())
-  paidAt          DateTime?
+  id                 String        @id @default(cuid())
+  userId             String
+  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId     String?
+  organization       Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  status             OrderStatus   @default(pending)
+  subtotalCents      Int
+  taxCents           Int
+  totalCents         Int
+  billingDocType     String      // NIT | CC
+  billingDocId       String
+  wompiTransactionId String?       @unique
+  items              OrderItem[]
+  createdAt          DateTime      @default(now())
+  paidAt             DateTime?
+  updatedAt          DateTime      @updatedAt
+
+  @@map("orders")
 }
 
 model OrderItem {
-  id         String  @id @default(cuid())
+  id         String   @id @default(cuid())
   orderId    String
-  order      Order   @relation(fields: [orderId], references: [id])
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   productId  String
-  product    Product @relation(fields: [productId], references: [id])
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
   priceCents Int
-  quantity   Int     @default(1)
+  quantity   Int      @default(1)
+  createdAt  DateTime @default(now())
+
+  @@map("order_items")
 }
 
 model Certificate {
   id          String   @id @default(cuid())
   userId      String
-  user        User     @relation(fields: [userId], references: [id])
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   productId   String
   pdfUrl      String
   issuedAt    DateTime @default(now())
   linkedinUrl String?
+  createdAt   DateTime @default(now())
+
+  @@map("certificates")
 }
 
 model Review {
   id        String   @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   productId String
-  product   Product  @relation(fields: [productId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   rating    Int
   comment   String?
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("reviews")
 }
 
 model CalendarEvent {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   title         String
   startsAt      DateTime
   endsAt        DateTime?
   googleEventId String?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("calendar_events")
 }
 ```
 
@@ -233,8 +365,17 @@ Reglas obligatorias por tabla con `organizationId` o `userId`:
 ## 5. Autenticación y autorización
 
 - Better Auth maneja sesión + Google OAuth. Rol (`Role`) se almacena en el modelo `User` y se inyecta en la sesión (JWT o cookie de sesión, según configuración de Better Auth).
-- Middleware de Next.js valida rutas protegidas (`/dashboard`, `/configuracion`, `/checkout`, `/mis-cursos/:id`) y redirige a `/login?redirect_to=...` si no hay sesión.
-- Autorización a nivel de Server Action: cada acción valida `role` explícitamente además de confiar en RLS (defensa en profundidad).
+- **Middleware RBAC** (`middleware.ts`): valida sesión + role a nivel de ruta antes de permitir acceso.
+  - Rutas protegidas: `/dashboard`, `/configuracion`, `/checkout`, `/mis-cursos` — requieren sesión.
+  - Rutas org: `/org` — requieren `hospital_admin` o superior.
+  - Rutas admin: `/admin` — requieren `super_admin`.
+  - Jerarquía de roles: `super_admin` (3) > `hospital_admin` (2) > `student` (1).
+  - Unauthenticated → redirect a `/sign-in?redirect_to=...`.
+  - Sin permiso → redirect a `/dashboard`.
+- **Server Actions RBAC:** cada acción valida `role` explícitamente además de confiar en RLS (defensa en profundidad).
+  - `lib/actions/invitation.ts`: `createInvitation`, `listOrgInvitations`, `deleteInvitation` — solo `hospital_admin`/`super_admin`.
+  - `lib/actions/organization.ts`: `linkUserToOrganization` — cualquier usuario autenticado (se vincula post-registro).
+- **Sistema de invitaciones:** `/sign-up?org_code=HOSP123` vincula automáticamente al usuario a la organización del código.
 - **MVP adicional:** verificación de email, CAPTCHA en registro, rate limiting (ver BACKEND.md §8).
 - **Backlog:** 2FA TOTP para `hospital_admin` y `super_admin`.
 

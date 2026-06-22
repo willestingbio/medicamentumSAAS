@@ -34,10 +34,21 @@ const navigationItems: NavigationItem[] = [
   { name: ' Marketplace', href: '/productos' },
 ];
 
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'EducationalOrganization',
+  name: 'Medicamentum360',
+  description: 'Plataforma SAAS educativa para hospitales. Cursos, experiencias VR y automatización con IA.',
+  url: BASE_URL,
+  address: { '@type': 'PostalAddress', addressCountry: 'CO' },
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es" suppressHydrationWarning>
-      <head />
+      <head>
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      </head>
       <body className="min-h-screen bg-background flex flex-col">
         <NavBar navigationItems={navigationItems} />
         <main className="flex-1">{children}</main>

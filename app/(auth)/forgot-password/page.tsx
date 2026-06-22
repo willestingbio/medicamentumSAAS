@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { checkRateLimit } from '@/lib/rate-limit';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
@@ -18,6 +19,11 @@ export default function ForgotPasswordPage() {
     setError(null);
     setLoading(true);
     try {
+      const rl = checkRateLimit(`forgot-password:${email}`, 3, 60_000);
+      if (!rl.allowed) {
+        setError(`Demasiados intentos. Intenta de nuevo en ${Math.ceil(rl.resetIn / 1000)} segundos.`);
+        return;
+      }
       const res = await fetch('/api/auth/forget-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

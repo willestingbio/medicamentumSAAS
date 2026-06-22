@@ -46,8 +46,9 @@ lerna-debug.log*
 # Miscellaneous
 .cache/
 .tmp/
-# InsForge & AI agent skills
+# InsForge & AI agent files
 .insforge
+insforge.toml
 .agent
 .agents
 .augment
@@ -60,3 +61,8 @@ lerna-debug.log*
 .roo
 .trae
 .windsurf
+.vercel
+.memory/
+# Temporary test routes
+app/api/test-auth-diagnose/
+app/api/test-signup2/

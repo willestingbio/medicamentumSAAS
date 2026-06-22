@@ -1,6 +1,6 @@
 # PROGRESS — Medicamentum360
 **Estado actual del plan de desarrollo**
-Actualizado: 2026-06-21
+Actualizado: 2026-06-22
 
 ---
 
@@ -43,8 +43,13 @@ Actualizado: 2026-06-21
 - [x] Build verificado: `npm run build` compila sin errores
 - [x] RLS isolation test SQL creado (`tests/rls-isolation-test.sql`)
   - Bloqueante antes de Fase 4 (pagos), no antes de Fase 2
+- [x] RLS cross-org isolation test passado contra InsForge API ✅
+  - Test ejecutado con 7 verificaciones via bridge JWT, todas pasaron
+  - user-a ve org-a, NO ve org-b; user-b ve org-b, NO ve org-a
+  - Enrollments aislados por usuario; productos públicos visibles
+  - Bridge JWT claims: `user_role`, `organization_id` para RLS sin subconsultas a users
 
-**Estado: Fase 1 COMPLETA! ✅**
+**Estado: Fase 1 COMPLETA ✅** — gap de RLS resuelto
 
 **Desviaciones conocidas (vs TRD.md / AGENTS.md):**
 1. Moodle local: jhardison/moodle en lugar de bitnami/moodle (Bitnami retiró imágenes de Docker Hub)
@@ -53,7 +58,9 @@ Actualizado: 2026-06-21
 4. Better Auth hooks: API de funciones en lugar de `{ matcher, handler }` en v1.6.20
 5. vanilla-cookieconsent: guiOptions para layout/position en v3.x
 
-## Fase 2 — Landing y navegación
+**Gaps resueltos:** Todos los gaps de auditoría han sido cerrados.
+
+## Fase 2 — Landing y navegación + Autenticación
 - [x] NavBar scroll-aware (píldora con blur + menú Sheet mobile) con `throttleWithTrailingInvocation`
 - [x] DarkModeSwitcher con `useColorMode` + localStorage persistencia
 - [x] Footer con branding, links y legal (privacidad/terminos)
@@ -68,7 +75,7 @@ Actualizado: 2026-06-21
 - [x] Páginas de autenticación: `/sign-in` y `/sign-up` con layout dos columnas
 - [x] AuthCarousel: carrusel pedagógico 3 pasos (Misión, LMS, Certificaciones) con Embla + auto-play
 - [x] Zod + React Hook Form con validación reactiva en ambos formularios
-- [x] Indicador visual de fortaleza de contraseña (5 niveles basados en heurística)
+- [x] Indicador visual de fortaleza de contraseña (5 niveles basados en zxcvbn)
 - [x] Rate limiter utility (`lib/rate-limit.ts`) para Server Actions
 - [x] Integración Better Auth client en formularios (email+password + Google OAuth)
 - [x] Middleware de rutas protegidas (`middleware.ts`): dashboard, configuracion, checkout, mis-cursos
@@ -76,25 +83,56 @@ Actualizado: 2026-06-21
 - [x] Animaciones: easing custom CSS vars (--ease-out, --ease-in-out), button `:active` scale(0.97), dropdown fade+zoom, prefers-reduced-motion, hover media query
 - [x] FRONTEND_PATTERNS.md §8: patrones de animación de Emil Kowalski
 - [x] Build: `npm run build` compila sin errores ✅
+- [x] Modelo `Organization` con campo `orgCode` único por organización
+- [x] Modelo `Plan` para planes de suscripción (name, description, priceCents, features, recommended, active, sortOrder)
+- [x] Modelo `OrganizationInvitation` para flujo de invitación (orgCode compartido, expiración, accepted)
+- [x] Server Actions: `linkUserToOrganization`, `getOrgDetails`, `createInvitation`, `listOrgInvitations`, `deleteInvitation`, `getOrgInfo`, `listOrgMembers`
+- [x] Página `/org/employees` — gestión de empleados e invitaciones (solo hospital_admin/super_admin)
+- [x] Sign-up con `?org_code=...` — badge de organización, vinculación automática post-registro
+- [x] Migración SQL: `plans` + `organization_invitations` + `org_code` + RLS policies
+- [x] TypeScript: `tsc --noEmit` exit 0, sin errores
+- [x] Prisma generate: cliente generado correctamente (v7.8.0)
 
-**Estado: Fase 2 COMPLETA! ✅**
+**Estado: Fase 2 COMPLETA ✅** — todos los items completados
+
+**Desviaciones conocidas (vs PLAN.md):**
+1. Rutas de auth: PLAN.md especifica `/login` y `/registro`; implementado como `/sign-in` y `/sign-up` por convención de Better Auth.
+2. Password strength: PLAN.md sugiere `@zxcvbn-ts/core`; implementado con `zxcvbn` original (ya funcionando, sin breaking changes).
+
+## Fase 2.5 — CI/CD, Seguridad de Repositorio y Despliegue
+- [ ] No iniciada (transversal, bloquea Fase 4)
 
 ## Fase 3 — Marketplace y detalle de producto
 - [ ] No iniciada
 
 ## Fase 4 — Carrito y checkout (Wompi)
-- [ ] No iniciada (bloqueada por Fase 1)
+- [ ] No iniciada (bloqueada por Fase 2.5)
 
-## Fase 5 — Integración Moodle (cursos)
+## Fase 5 — Dashboard del estudiante
 - [ ] No iniciada
 
-## Fase 6 — Dashboard del estudiante
+## Fase 6 — Integración Moodle
 - [ ] No iniciada
 
-## Fase 7 — Configuración, panel hospital_admin y facturación
+## Fase 7 — Panel de organización (hospital_admin)
 - [ ] No iniciada
 
-## Fase 8 — Pulido, cumplimiento y post-MVP
+## Fase 8 — Panel Super Admin
+- [ ] No iniciada
+
+## Fase 9 — Operaciones
+- [ ] No iniciada
+
+## Fase 10 — Analíticas y Reportes
+- [ ] No iniciada
+
+## Fase 11 — LMS Avanzado
+- [ ] No iniciada
+
+## Fase 12 — Notificaciones
+- [ ] No iniciada
+
+## Fase 13 — Pulido, SEO, Accesibilidad y Compliance Final
 - [ ] No iniciada
 
 ---
@@ -130,3 +168,74 @@ Actualizado: 2026-06-21
 - CSS-only `@keyframes gradient-shift` (background-position 0%→100%→0%, 8s)
 - `motion-safe:animate-gradient-shift`: solo anima si usuario no prefiere reduced-motion
 - Sin JavaScript, sin librerías externas (Lighthouse-safe)
+
+### Hallazgo #6 — Password strength zxcvbn ✅
+- Heurística `passwordStrength()` reemplazada por `zxcvbn()` en `app/(auth)/sign-up/page.tsx`
+- Import `import zxcvbn from 'zxcvbn'` (CommonJS, Next.js maneja interop)
+- Mismos 5 niveles de etiqueta/color, score real de entropía
+
+### Hallazgo #7 — Rate limiter conectado ✅
+- Better Auth `rateLimit` global habilitado en `lib/auth.ts`: 10 req/60s window, memory storage
+- `checkRateLimit()` añadido en sign-in (5 req/min por email) y forgot-password (3 req/min por email)
+- Protección server-side (Better Auth rateLimit middleware) + client-side (checkRateLimit prefetch)
+
+### Hallazgo #8 — Dead checkbox "Recordar" eliminado ✅
+- Checkbox sin estado ni handler removido de `app/(auth)/sign-in/page.tsx`
+
+### Hallazgo #9 — Schema.org JSON-LD ✅
+- Schema `EducationalOrganization` con `@context`, name, description, url, address (Colombia)
+- Inyectado vía `<script type="application/ld+json">` en `<head>` de `app/layout.tsx`
+- Sin librerías externas
+
+### Hallazgo #10 — RLS cross-org isolation verified ✅
+- **Bug encontrado:** infinite recursion en policy `users_select_own_or_org` por subconsultas inline a `users` dentro de la policy de `users`
+- **Fix:** Nuevas funciones `get_user_role()` (SECURITY DEFINER, lee `auth.jwt() ->> 'user_role'`) y `get_user_org_id()` simplificada (solo JWT, sin fallback a `users`)
+- **Bridge JWT actualizado:** claims `user_role` y `organization_id` en lugar de `org_id: null`
+- **Policies reescritas:** 29 policies sin subconsultas recursivas, usando `get_user_role()` y `get_user_org_id()`
+- **Test ejecutado:** 7/7 pasaron contra InsForge API cloud con bridge JWT
+  - user-a ve org-a, NO ve org-b ✓
+  - user-b ve org-b, NO ve org-a ✓
+  - Enrollments aislados: cada usuario ve solo los propios ✓
+  - Productos públicos visibles a todos ✓
+- **Criterio bloqueante de PLAN.md §4 cumplido** — Fase 4 puede proceder
+
+### Hallazgo #11 — `users` table reconciliation ✅
+- **Problema:** La tabla `users` en la nube carecía de columnas `email`, `name`, `lastName`, `emailVerified`, `image`, `phone` declaradas en el modelo Prisma `User` (`@@map("users")`). Better Auth escribe a `users` via el Prisma adapter; sin esas columnas fallaría en producción.
+- **Tabla `user` (singular):** Existe como artifact de migraciones previas con columnas legacy (`hospitalId` en vez de `organizationId`). **No es usada por Better Auth** (solo la tabla `users` via Prisma `User` model). Los datos de prueba fueron insertados explícitamente en ambas por `rls-isolation-test.sql`.
+- **Fix:** Migración que agrega `email`, `name`, `lastName`, `emailVerified`, `image`, `phone` + índice único en `email` a la tabla `users`. Datos test actualizados con emails únicos.
+- **No hay gap restante** — ambas tablas coexisten sin conflicto: `users` recibe writes de Better Auth, `user` es legacy sin escrituras activas.
+
+### Hallazgo #12 — Fix after-hook undefined return crash in Better Auth 1.6.20 ✅
+- **Problema:** El sign-up y otras rutas de auth devolvían 500 con body vacío debido a que el `after` hook en Better Auth retornaba `undefined` para paths distintos de `/sign-up`. En la función `runAfterHooks` (dispatch.mjs:127), se intentaba leer `result.headers` sin verificar si `result` era `undefined`, causando `TypeError: Cannot read properties of undefined (reading 'headers')`.
+- **Root cause:** Better Auth 1.6.20's `runAfterHooks` no usa optional chaining en `result.headers`, a diferencia de `runBeforeHooks` que sí lo hace.
+- **Fix:** El `after` hook en `lib/auth.ts` ahora siempre retorna un objeto vacío `{}` para evitar el crash, asegurando que `result.headers` nunca sea `undefined`.
+- **Verificación:** Todos los endpoints de auth (`/api/auth/get-session`, `/api/auth/sign-up/email`, `/api/auth/sign-in/email`) ahora retornan 200 correctamente en ambiente de producción (InsForge + Vercel).
+
+---
+
+## Hallazgos resueltos en sesión 2026-06-22
+
+### Hallazgo #13 — Modelos Plan, OrganizationInvitation + campo orgCode ✅
+- **Modelo `Plan`:** name, description, priceCents, features (String[]), recommended, active, sortOrder — para planes de suscripción de organizaciones.
+- **Modelo `OrganizationInvitation`:** organizationId, email, role, orgCode, invitedByUserId, expiresAt, accepted — para flujo de invitación por código.
+- **Campo `orgCode` en `Organization`:** código único por organización, usado como token de invitación compartido.
+- **Relaciones:** Organization hasMany OrganizationInvitation; OrganizationInvitation belongsTo Organization (onDelete: Cascade).
+- **Schema sincronizado:** `prisma/schema.prisma` actualizado con los 3 modelos + relaciones + `@@map()`.
+
+### Hallazgo #14 — Server Actions para RBAC y organizaciones ✅
+- **`lib/actions/organization.ts`:** `linkUserToOrganization(orgCode)` — vincula usuario a organización post-registro; `getOrgDetails(orgCode)` — valida código y retorna nombre de org.
+- **`lib/actions/invitation.ts`:** `createInvitation(email)` — crea invitación (solo hospital_admin/super_admin); `listOrgInvitations()` — lista invitaciones de la org; `deleteInvitation(id)` — elimina invitación pendiente; `getOrgInfo()` — retorna info de la org del usuario; `listOrgMembers()` — lista miembros de la org.
+- **RBAC explícito:** cada Server Action valida `session.user.role` antes de ejecutar (defensa en profundidad, no solo RLS).
+- **Patrón de tipos:** `(session.user as any).role` temporal hasta extender Better Auth types.
+
+### Hallazgo #15 — Página `/org/employees` ✅
+- **Layout:** header + código de invitación (con copiar al portapapeles) + formulario de invitación + lista de miembros + lista de invitaciones.
+- **Protección:** middleware.ts bloquea acceso sin `hospital_admin` o `super_admin`.
+- **Componentes:** `InvitationRow` (estado visual: pendiente/aceptada/expirada), `MemberRow` (avatar + rol badge).
+- **Feedback:** error states, loading states, copy success feedback.
+
+### Hallazgo #16 — Sign-up con org_code + migración SQL ✅
+- **Flujo `/sign-up?org_code=HOSP123`:** valida código via `getOrgDetails()`, muestra badge de organización, vincula post-registro via `linkUserToOrganization()`.
+- **Migración SQL:** `migrations/20260622100000_add-plans-and-invitations.sql` — crea `plans`, `organization_invitations`, agrega `org_code` a `organizations`, RLS policies para ambas tablas (SELECT público para planes activos, CRUD para hospital_admin/super_admin en invitations).
+- **TypeScript:** `tsc --noEmit` exit 0, `prisma generate` exit 0 (v7.8.0).
+- **PLAN.md:** Fase 2 marcada como COMPLETA, Fase 2.5 actualizada con nota de migración.

@@ -118,8 +118,50 @@ Especificación exacta:
 │                    │  ¿Ya tienes cuenta? →   │
 └───────────────────┴─────────────────────┘
 ```
+
+**Flujo de invitación por organización (`?org_code=...`):**
+- Cuando el usuario llega a `/sign-up?org_code=HOSP123`, se muestra un badge con el nombre de la organización (ej: "Serás añadido como empleado de Hospital XYZ").
+- Se valida el `org_code` via Server Action `getOrgDetails()` antes de mostrar el formulario.
+- Si el código es inválido, se muestra error y se bloquea el registro.
+- Post-registro, se ejecuta `linkUserToOrganization(orgCode)` que vincula el usuario a la organización y marca la invitación como aceptada.
+- El badge se muestra encima del formulario de Google OAuth, usando un componente `<Building2>` de lucide-react con fondo `bg-primary/10`.
+
 - Validación en tiempo real (fortaleza de password con indicador visual, formato de email).
 - Login: mismo layout, campos reducidos + "recordar contraseña" + "¿olvidaste tu contraseña?".
+
+### 3.6.1 Panel de empleados (`/org/employees`)
+
+Solo accesible para `hospital_admin` y `super_admin` (protegido por `middleware.ts`).
+
+```
+┌─────────────────────────────────────────────┐
+│  Gestión de empleados                        │
+│  Invita empleados a tu organización          │
+├─────────────────────────────────────────────┤
+│  Código de invitación                        │
+│  ┌──────────────────────────┐ [Copiar]       │
+│  │ HOSP123XYZ               │                │
+│  └──────────────────────────┘                │
+│  Comparte este código:                       │
+│  /sign-up?org_code=HOSP123XYZ                │
+├─────────────────────────────────────────────┤
+│  Invitar empleado                            │
+│  [correo@hospital.com          ] [Invitar]   │
+├─────────────────────────────────────────────┤
+│  Empleados (3)                               │
+│  [Avatar] Juan Pérez        [Administrador]  │
+│  [Avatar] María García      [Estudiante]     │
+│  [Avatar] Carlos López      [Estudiante]     │
+├─────────────────────────────────────────────┤
+│  Invitaciones (2)                            │
+│  [Clock] ana@hospital.com    Expira 25/06    │
+│  [Check] luis@hospital.com   Aceptada        │
+└─────────────────────────────────────────────┘
+```
+
+- El código de invitación se copia al portapapeles con feedback visual ("Copiado").
+- Las invitaciones muestran estado: pendiente (reloj), aceptada (check verde), expirada (gris).
+- Se puede eliminar invitaciones pendientes.
 
 ### 3.7 Dashboard (`/dashboard`)
 

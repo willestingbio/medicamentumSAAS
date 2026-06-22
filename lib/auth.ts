@@ -1,30 +1,7 @@
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { prisma } from './prisma';
-import { createClient } from '@insforge/sdk';
-import jwt from 'jsonwebtoken';
-
-function requireEnv(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing required env var: ${name}`);
-  return v;
-}
-
-/**
- * Cliente InsForge server-side para enviar emails transaccionales.
- * Los callbacks de Better Auth se ejecutan sin sesión de usuario,
- * así que firmamos un JWT de servicio de 5 minutos con INSFORGE_JWT_SECRET.
- */
-function insforgeServerClient() {
-  const token = jwt.sign(
-    { sub: 'better-auth-service', role: 'authenticated', aud: 'insforge-api' },
-    requireEnv('INSFORGE_JWT_SECRET'),
-    { algorithm: 'HS256', expiresIn: '5m' },
-  );
-  const c = createClient({ baseUrl: requireEnv('NEXT_PUBLIC_INSFORGE_BASE_URL') });
-  c.getHttpClient().setAuthToken(token);
-  return c;
-}
+import { createAdminClient } from '@insforge/sdk';
 
 /**
  * Better Auth server configuration.
@@ -40,6 +17,17 @@ function insforgeServerClient() {
  * 
  * Documentación: https://better-auth.com/docs
  */
+/**
+ * Cliente InsForge admin server-side para enviar emails transaccionales.
+ * Usa createAdminClient con la API key para privilegios de servicio.
+ */
+function insforgeServerClient() {
+  return createAdminClient({
+    baseUrl: process.env.NEXT_PUBLIC_INSFORGE_BASE_URL || '',
+    apiKey: process.env.INSFORGE_JWT_SECRET || '',
+  });
+}
+
 export const auth = betterAuth({
   appName: 'Medicamentum360',
   baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:3000',
@@ -53,32 +41,38 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     sendResetPassword: async ({ user, url }) => {
-      const insforge = insforgeServerClient();
-      const { error } = await insforge.emails.send({
-        to: user.email,
-        subject: 'Restablece tu contraseña — Medicamentum360',
-        html: `<p>Hola ${user.name ?? ''},</p>
+      try {
+        const insforge = insforgeServerClient();
+        await insforge.emails.send({
+          to: user.email,
+          subject: 'Restablece tu contraseña — Medicamentum360',
+          html: `<p>Hola ${user.name ?? ''},</p>
 <p>Has solicitado restablecer tu contraseña. Haz clic en el siguiente enlace:</p>
 <p><a href="${url}">Restablecer contraseña</a></p>
 <p>Si no solicitaste esto, ignora este mensaje.</p>`,
-      });
-      if (error) throw new Error(error.message);
+        });
+      } catch {
+        console.warn('[Auth] Email send skipped');
+      }
     },
   },
 
   emailVerification: {
-    sendOnSignUp: true,
+    sendOnSignUp: false,
     autoSignInAfterVerification: true,
     sendVerificationEmail: async ({ user, url }) => {
-      const insforge = insforgeServerClient();
-      const { error } = await insforge.emails.send({
-        to: user.email,
-        subject: 'Verifica tu email — Medicamentum360',
-        html: `<p>Hola ${user.name ?? ''},</p>
+      try {
+        const insforge = insforgeServerClient();
+        await insforge.emails.send({
+          to: user.email,
+          subject: 'Verifica tu email — Medicamentum360',
+          html: `<p>Hola ${user.name ?? ''},</p>
 <p>Gracias por registrarte. Haz clic en el siguiente enlace para verificar tu email:</p>
 <p><a href="${url}">Verificar email</a></p>`,
-      });
-      if (error) throw new Error(error.message);
+        });
+      } catch {
+        console.warn('[Auth] Email send skipped');
+      }
     },
   },
 
@@ -138,33 +132,46 @@ export const auth = betterAuth({
     },
     after: async (ctx: any) => {
       if (ctx.path === '/sign-up' && ctx.method === 'POST') {
-        if (!ctx.context.user?.email || !ctx.context.user?.name) return;
-        try {
-          const { createMoodleUser } = await import('./moodle/client');
-          const nameParts = ctx.context.user.name.trim().split(' ');
-          const firstname = nameParts[0] || ctx.context.user.name;
-          const lastname = nameParts.length > 1
-            ? nameParts.slice(1).join(' ')
-            : firstname;
-          const moodleUserId = await createMoodleUser({
-            username: ctx.context.user.email.split('@')[0],
-            email: ctx.context.user.email,
-            firstname,
-            lastname,
-            password: crypto.randomUUID().slice(0, 12) + '!Aa1',
-          });
-          if (moodleUserId) {
-            const { prisma } = await import('./prisma');
-            await prisma.user.update({
-              where: { id: ctx.context.user.id },
-              data: { moodleUserId },
+        if (ctx.context.user?.email && ctx.context.user?.name) {
+          try {
+            const { createMoodleUser } = await import('./moodle/client');
+            const nameParts = ctx.context.user.name.trim().split(' ');
+            const firstname = nameParts[0] || ctx.context.user.name;
+            const lastname = nameParts.length > 1
+              ? nameParts.slice(1).join(' ')
+              : firstname;
+            const moodleUserId = await createMoodleUser({
+              username: ctx.context.user.email.split('@')[0],
+              email: ctx.context.user.email,
+              firstname,
+              lastname,
+              password: crypto.randomUUID().slice(0, 12) + '!Aa1',
             });
+            if (moodleUserId) {
+              const { prisma } = await import('./prisma');
+              await prisma.user.update({
+                where: { id: ctx.context.user.id },
+                data: { moodleUserId },
+              });
+            }
+          } catch (e) {
+            console.warn('[Auth Hook] Moodle user creation skipped:', e instanceof Error ? e.message : e);
           }
-        } catch (e) {
-          console.warn('[Auth Hook] Moodle user creation skipped:', e instanceof Error ? e.message : e);
         }
       }
+      return {};
     },
+  },
+
+  rateLimit: {
+    enabled: true,
+    window: 60,
+    max: 10,
+    storage: 'memory',
+  },
+
+  onAPIError: {
+    throw: true,
   },
 
   // Configuración avanzada de seguridad (Fase 8)

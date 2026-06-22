@@ -473,9 +473,97 @@ npx shadcn@latest add button dialog sheet progress dropdown-menu toast avatar ca
 
 ---
 
-## 8. Animaciones — Patrones de Emil Kowalski (Design Engineering)
+## 8. RBAC Middleware y NavBar dinámico por rol
 
-### 8.1 Easing custom (sobrescribir los built-in de CSS)
+### 8.1 Middleware de Next.js (RBAC a nivel de ruta)
+
+Patrón implementado en `middleware.ts` — valida sesión + role antes de permitir acceso a rutas protegidas:
+
+```ts
+// middleware.ts
+const protectedRoutes = ['/dashboard', '/configuracion', '/checkout', '/mis-cursos'];
+const orgRoutes = ['/org'];         // requiere hospital_admin o superior
+const adminRoutes = ['/admin'];     // requiere super_admin
+
+type Role = 'super_admin' | 'hospital_admin' | 'student';
+
+const roleHierarchy: Record<Role, number> = {
+  super_admin: 3,
+  hospital_admin: 2,
+  student: 1,
+};
+
+function hasRequiredRole(userRole: Role | undefined, requiredRole: Role): boolean {
+  if (!userRole) return false;
+  return roleHierarchy[userRole] >= roleHierarchy[requiredRole];
+}
+```
+
+**Flujo:**
+1. Extrae cookie `better-auth.session_token` del request.
+2. Si no existe → redirect a `/sign-in?redirect_to=...`.
+3. Para rutas admin/org, hace fetch a `/api/auth/get-session` con las cookies del request para obtener el rol.
+4. Valida jerarquía de roles: `super_admin` > `hospital_admin` > `student`.
+5. Si no tiene permiso → redirect a `/dashboard`.
+
+**Matcher:** `/dashboard/:path*`, `/configuracion/:path*`, `/checkout/:path*`, `/mis-cursos/:path*`, `/org/:path*`, `/admin/:path*`.
+
+### 8.2 NavBar dinámico por rol
+
+El NavBar muestra diferentes elementos según el estado de autenticación y el rol del usuario:
+
+```tsx
+// Patrón de items condicionales
+const navigationItems = [
+  { name: 'Nosotros', href: '/#nosotros', show: 'always' },
+  { name: 'Ejemplos', href: '/#ejemplos', show: 'always' },
+  { name: 'Blog', href: '/#blog', show: 'always' },
+  { name: 'Productos', href: '/productos', show: 'always' },
+  { name: 'Mi Aprendizaje', href: '/dashboard', show: 'authenticated' },
+  { name: 'Empleados', href: '/org/employees', show: 'hospital_admin' },
+];
+```
+
+**Estados del NavBar:**
+| Estado | Elementos visibles |
+|---|---|
+| Visitante | Logo, Nosotros, Ejemplos, Blog, Productos, [Tema], Entrar |
+| Autenticado (student) | Logo, Mi Aprendizaje, Marketplace, [Tema], [Avatar ▾] |
+| Autenticado (hospital_admin) | Logo, Mi Aprendizaje, Marketplace, Empleados, [Tema], [Avatar ▾] |
+| Autenticado (super_admin) | Logo, Mi Aprendizaje, Marketplace, Empleados, Admin, [Tema], [Avatar ▾] |
+
+**En `/productos`** (marketplace), el NavBar además se oculta al hacer scroll down y reaparece al subir (scroll direction tracking).
+
+### 8.3 Server Actions con RBAC
+
+Cada Server Action valida el rol explícitamente además de confiar en RLS (defensa en profundidad):
+
+```ts
+// Patrón en lib/actions/invitation.ts
+async function getSession() {
+  const session = await auth.api.getSession({ headers: await headers() });
+  return session;
+}
+
+export async function createInvitation(email: string) {
+  const session = await getSession();
+  if (!session?.user) throw new Error('No autenticado');
+
+  const userRole = (session.user as any).role;
+  if (userRole !== 'hospital_admin' && userRole !== 'super_admin') {
+    throw new Error('No autorizado para invitar usuarios');
+  }
+  // ... lógica de invitación
+}
+```
+
+**Nota sobre tipos:** Better Auth no infiere los campos adicionales (`role`, `organizationId`) en el tipo de sesión. Se usa `(session.user as any).role` como patrón temporal hasta que se extienda el tipo de Better Auth o se use un tipo custom.
+
+---
+
+## 9. Animaciones — Patrones de Emil Kowalski (Design Engineering)
+
+### 9.1 Easing custom (sobrescribir los built-in de CSS)
 
 Los easings built-in de CSS son débiles. Usar estos custom curves:
 
@@ -487,14 +575,14 @@ Los easings built-in de CSS son débiles. Usar estos custom curves:
 
 **Regla: nunca `ease-in` en UI.** Comienza lento, retrasando el momento que el usuario más observa.
 
-### 8.2 Decision framework (preguntar antes de animar)
+### 9.2 Decision framework (preguntar antes de animar)
 
 1. **¿Debería animar esto?** Frecuencia: 100+/día → NO. Decenas/día → reducir. Ocasional → estándar. Raro → delight.
 2. **¿Cuál es el propósito?** Consistencia espacial, indicación de estado, feedback, explicación, evitar cambio brusco.
 3. **¿Qué easing?** Entrando/saliendo → `ease-out`. Moviéndose en pantalla → `ease-in-out`. Hover → `ease`. Constante → `linear`.
 4. **¿Qué duración?** Botón 100-160ms. Tooltip 125-200ms. Dropdown 150-250ms. Modal/drawer 200-500ms. **Máximo 300ms para UI.**
 
-### 8.3 Patrones de componentes
+### 9.3 Patrones de componentes
 
 | Elemento | Animación | Detalle |
 |---|---|---|
@@ -505,7 +593,7 @@ Los easings built-in de CSS son débiles. Usar estos custom curves:
 | Drawer | `translateY(100%)` con `ease-out` 400ms o spring | Usar `--ease-drawer` para iOS-like |
 | Stagger (grupos) | 30-80ms entre items, `translateY(8px)` + `opacity`, 300ms ease-out | No bloquear interacción |
 
-### 8.4 Reglas de performance
+### 9.4 Reglas de performance
 
 - **Solo animar `transform` y `opacity`** — corren en GPU. `width`/`height`/`margin`/`padding`/`top`/`left` NO.
 - **CSS transitions > keyframes** para UI dinámica (interrumpibles). Keyframes reinician desde cero.
@@ -513,7 +601,7 @@ Los easings built-in de CSS son débiles. Usar estos custom curves:
 - **WAAPI** para animaciones programáticas con rendimiento CSS.
 - **Framer Motion shorthands** (`x`, `y`, `scale`) NO son hardware-accelerated. Usar `transform: "translateX()"`.
 
-### 8.5 Accesibilidad
+### 9.5 Accesibilidad
 
 ```css
 @media (prefers-reduced-motion: reduce) {
@@ -525,11 +613,11 @@ Los easings built-in de CSS son débiles. Usar estos custom curves:
 }
 ```
 
-### 8.6 Asymmetric timing
+### 9.6 Asymmetric timing
 
 Donde el usuario decide → lento (hold-to-delete: 2s). Donde el sistema responde → rápido (release: 200ms).
 
-### 8.7 Verify checklist
+### 9.7 Verify checklist
 
 | Issue | Fix |
 |---|---|
@@ -543,7 +631,7 @@ Donde el usuario decide → lento (hold-to-delete: 2s). Donde el sistema respond
 | Keyframes en elementos rápidos | CSS transitions |
 | Misma velocidad enter/exit | Exit más rápido que enter |
 
-### 8.8 CSS variables globales (agregar a globals.css)
+### 9.8 CSS variables globales (agregar a globals.css)
 
 ```css
 :root {

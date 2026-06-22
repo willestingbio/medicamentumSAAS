@@ -1,5 +1,5 @@
 'use client';
-import { Menu } from 'lucide-react';
+import { Menu, Building2, Shield } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -34,11 +34,11 @@ function UserAvatar({ user }: { user: { name: string; image?: string | null } })
   );
 }
 
-export function NavBar({
-  navigationItems,
-}: {
+interface NavBarProps {
   navigationItems: NavigationItem[];
-}) {
+}
+
+export function NavBar({ navigationItems }: NavBarProps) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isHidden, setIsHidden] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -48,6 +48,10 @@ export function NavBar({
   const pathname = usePathname();
   const isMarketplace = pathname.startsWith('/productos');
   const { data: session } = authClient.useSession();
+
+  const userRole = (session?.user as any)?.role;
+  const isHospitalAdmin = userRole === 'hospital_admin' || userRole === 'super_admin';
+  const isSuperAdmin = userRole === 'super_admin';
 
   useEffect(() => {
     const throttled = throttleWithTrailingInvocation(() => {
@@ -173,20 +177,45 @@ export function NavBar({
 
                 {dropdownOpen && (
                   <div
-                    className="absolute right-0 top-full mt-2 w-48 rounded-md border bg-popover shadow-lg z-50 origin-top-right animate-in fade-in zoom-in-95 duration-150 ease-out"
+                    className="absolute right-0 top-full mt-2 w-56 rounded-md border bg-popover shadow-lg z-50 origin-top-right animate-in fade-in zoom-in-95 duration-150 ease-out"
                   >
                     <div className="px-3 py-2 border-b">
                       <p className="text-sm font-medium truncate">{session.user.name}</p>
                       <p className="text-xs text-muted-foreground truncate">{session.user.email}</p>
+                      {userRole && (
+                        <p className="text-xs text-primary mt-0.5">
+                          {userRole === 'super_admin' ? 'Super Administrador' : userRole === 'hospital_admin' ? 'Administrador' : 'Estudiante'}
+                        </p>
+                      )}
                     </div>
                     <div className="py-1">
                       <Link
                         href="/dashboard"
                         onClick={() => setDropdownOpen(false)}
-                        className="block px-3 py-1.5 text-sm hover:bg-accent transition-colors"
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors"
                       >
                         Mi dashboard
                       </Link>
+                      {isHospitalAdmin && (
+                        <Link
+                          href="/org/employees"
+                          onClick={() => setDropdownOpen(false)}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors"
+                        >
+                          <Building2 className="size-4" />
+                          Empleados
+                        </Link>
+                      )}
+                      {isSuperAdmin && (
+                        <Link
+                          href="/admin"
+                          onClick={() => setDropdownOpen(false)}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors"
+                        >
+                          <Shield className="size-4" />
+                          Administración
+                        </Link>
+                      )}
                       <Link
                         href="/configuracion"
                         onClick={() => setDropdownOpen(false)}
@@ -252,6 +281,11 @@ export function NavBar({
                         <div className="px-3 py-2">
                           <p className="text-sm font-medium">{session.user.name}</p>
                           <p className="text-xs text-muted-foreground">{session.user.email}</p>
+                          {userRole && (
+                            <p className="text-xs text-primary mt-0.5">
+                              {userRole === 'super_admin' ? 'Super Administrador' : userRole === 'hospital_admin' ? 'Administrador' : 'Estudiante'}
+                            </p>
+                          )}
                         </div>
                         <Link
                           href="/dashboard"
@@ -260,6 +294,26 @@ export function NavBar({
                         >
                           Mi dashboard
                         </Link>
+                        {isHospitalAdmin && (
+                          <Link
+                            href="/org/employees"
+                            onClick={() => setMobileOpen(false)}
+                            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent transition-colors"
+                          >
+                            <Building2 className="size-4" />
+                            Empleados
+                          </Link>
+                        )}
+                        {isSuperAdmin && (
+                          <Link
+                            href="/admin"
+                            onClick={() => setMobileOpen(false)}
+                            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent transition-colors"
+                          >
+                            <Shield className="size-4" />
+                            Administración
+                          </Link>
+                        )}
                         <button
                           onClick={() => { signOut(); setMobileOpen(false); }}
                           className="w-full text-left rounded-lg px-3 py-2 text-sm text-destructive hover:bg-accent transition-colors"

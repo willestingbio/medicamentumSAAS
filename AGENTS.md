@@ -69,6 +69,7 @@ Mantén `PROGRESS.md` (en `.guides/`) como la única fuente de verdad sobre qué
     * `test(moodle): añade test de idempotencia de enrol_manual_enrol_users`
     * `chore(deps): añade vanilla-cookieconsent`
 * **Commits pequeños y frecuentes**, no un commit gigante al final de la fase. Cada commit debe poder revertirse solo sin romper el build.
+* **Nunca modifiques `.env.local` sin permiso explícito del humano.** Si necesitas crear o modificar variables de entorno, proponle el cambio en tu respuesta y espera aprobación antes de escribir el archivo. La única excepción es usar la herramienta `cp .env.local.example .env.local` si el archivo no existe y el humano te pidió inicializarlo.
 * **Nunca hagas commit de secretos**: `.env`, `.env.local`, `.env.moodle.local`, cualquier archivo bajo `docker/output/`, tokens, llaves privadas de Wompi/Moodle. Verifica que el `.gitignore` los cubra antes de tu primer commit usando tu herramienta de terminal.
 * **Nunca hagas `git push --force` sobre `main` o cualquier rama compartida.** Si necesitas reescribir historia, hazlo solo en tu rama local antes de abrir PR.
 * **Una rama por fase o por feature dentro de una fase**, nombrada `fase-N-<slug>` (ej: `fase-4-checkout-wompi`). No trabajes directamente sobre `main` para nada que toque pagos, RLS o auth.
@@ -107,7 +108,7 @@ En lugar de depender de "skills" inyectados externamente, debes revisar y aplica
 ## 5. Seguridad y cumplimiento — no negociable
 
 * **Nunca** loguees, imprimas en consola, o incluyas en mensajes de commit/PR: `MOODLE_WS_TOKEN`, `WOMPI_PRIVATE_KEY`, `WOMPI_EVENTS_SECRET`, `BETTER_AUTH_SECRET`, contraseñas de Moodle/MariaDB del docker-compose.
-* **No se habilitan pagos reales en ningún ambiente** (staging incluido) sin que el test de aislamiento RLS cross-org (`TRD.md §4`) esté documentado como pasado en `PROGRESS.md`.
+* **No se habilitan pagos reales en ningún ambiente** (staging incluido) sin que el test de aislamiento RLS cross-org (`TRD.md §4`) esté documentado como pasado en `PROGRESS.md`. Actualmente la infraestructura RLS está lista (29 policies, helpers, bridge JWT) pero el test contra la API InsForge no se ha corrido — es requisito antes de Fase 4.
 * Cualquier cambio a `schema.prisma` que toque una tabla con `userId`/`organizationId` debe venir con su policy RLS en el mismo commit — nunca en uno separado "para después".
 * **Ley 1581 / Habeas Data (Colombia):** Cualquier nuevo campo de datos personales que agregues (ej: un nuevo dato de perfil) requiere verificar si la política de privacidad y el banner de cookies (`vanilla-cookieconsent`, `FRONTEND_PATTERNS.md §5`) necesitan actualizarse — pregúntale al humano, no asumas que no aplica.
 
@@ -118,6 +119,15 @@ En lugar de depender de "skills" inyectados externamente, debes revisar y aplica
 * Toda integración con Moodle se desarrolla y prueba primero contra el entorno local de `docker/` (`TRD.md §17`), nunca contra la URL de producción directamente.
 * El webhook de Wompi necesita un test de idempotencia explícito (mismo evento dos veces → no duplica `Order` ni `Enrollment`) antes de considerarse terminado.
 * No marques una fase como completa en `PROGRESS.md` sin que sus tests asociados (los que liste `PLAN.md`/`TRD.md §16`) estén corriendo en verde (verifícalo ejecutando el comando de test en la terminal).
+
+---
+
+## 6.5. Acceso a base de datos — directo vs. SDK
+
+* **InsForge cloud NO expone Postgres vía TCP.** No existe DATABASE_URL externa. El pooler (`pooler.<appkey>.us-east.insforge.app`) solo es accesible desde dentro de la red interna de InsForge.
+* **Para operaciones runtime server-side**, usa `createAdminClient({ apiKey })` de `@insforge/sdk` en vez de Prisma. El API key (`ik_...` de `.insforge/project.json`) es full-access admin, equivalente a service_role key.
+* **Prisma solo funciona en desarrollo local** con una Postgres local (`postgresql://postgres:postgres@localhost:5432/medicamentum360`). El `prismaAdapter` de Better Auth es la única excepción justificada para usar Prisma — y requiere DATABASE_URL local.
+* **Migraciones SQL** siempre vía `npx @insforge/cli db query --file migrations/<file>.sql` — no uses `prisma migrate`.
 
 ---
 
@@ -180,4 +190,19 @@ Key patterns:
 - Database inserts take an array: `insert([{ ... }])`.
 - Reference users with `auth.users(id)`; use `auth.uid()` in RLS policies.
 - For storage uploads, persist both the returned `url` and `key`.
+
+### Dual user table pattern
+
+This project has **two user tables** that coexist:
+
+- **`user`** (Better Auth's internal table): id, email, name, emailVerified, image, phone, role — creada y gestionada automáticamente por el prismaAdapter de Better Auth.
+- **`users`** (Prisma model mapeado con `@@map("users")`): id, role, organizationId, moodleUserId, profilePicUrl, specialty, locale, theme — datos de negocio del usuario.
+
+Ambas tablas comparten el mismo `id` (el UUID de Better Auth). La tabla `user` maneja auth; la tabla `users` maneja datos de negocio. Al registrar un usuario, Better Auth crea el registro en `user` y el hook post-sign-up debe crear también el registro en `users`.
+
+⚠️ **Cuidado:** El schema de Prisma (`User` model) incluye `email`, `name`, `lastName` que NO existen en la tabla `users` real en InsForge cloud — esas columnas solo están en la tabla `user` de Better Auth. No asumas que `prisma.user.findUnique()` devuelve email/name; si necesitas esos datos, usa `auth.api.getSession()` o consulta la tabla `user`.
+
+### Convención de rutas de autenticación
+
+El proyecto usa `/sign-in` y `/sign-up` (convención Better Auth) en lugar de `/login` y `/registro` (especificado en PLAN.md). Es una desviación intencional documentada.
 <!-- INSFORGE:END -->
