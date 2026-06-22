@@ -1,10 +1,10 @@
 # BACKEND — Medicamentum360
 **Implementación de Server Actions, Route Handlers y lógica de negocio**
-Versión: 1.0 · Fecha: 2026-06-22
+Versión: 2.0 · Fecha: 2026-06-22
 
-> **Relación con otros documentos:** este documento detalla la implementación de la capa de servidor. La arquitectura general y el modelo de datos están en `TRD.md`. Los flujos de usuario están en `FLUJOS.md`. La especificación de pantallas está en `UX_UI.md`. El plan de desarrollo fasado está en `PLAN.md`.
+> **Cambio v2.0:** se elimina toda referencia a InsForge SDK (`@insforge/sdk`), InsForge CLI y Vercel. La app corre en **VPS con Docker**. Postgres accesible vía TCP directo. Storage via **Cloudflare R2** (o MinIO). Ver `TRD.md §1-2` y `DEPLOY.md` para la arquitectura completa.
 
-> **Fuente de verdad del stack:** Next.js 15 + App Router, Server Actions, React 19. InsForge Postgres + Prisma 7 (con `@prisma/adapter-pg`). Better Auth 1.6.20. Las desviaciones de implementación conocidas respecto a la documentación estándar están en `PLAN.md §12`.
+> **Fuente de verdad del stack:** Next.js 15 + App Router, Server Actions, React 19. Postgres 16 (Docker) + Prisma 7 (con `@prisma/adapter-pg`). Better Auth 1.6.20. Nginx como reverse proxy.
 
 ---
 
@@ -16,10 +16,10 @@ Versión: 1.0 · Fecha: 2026-06-22
 lib/
   auth.ts                    — configuración de Better Auth
   prisma.ts                  — singleton de PrismaClient
+  storage/
+    client.ts                — cliente S3-compatible (Cloudflare R2 / MinIO)
   moodle/
     client.ts                — cliente HTTP wrapper de la API REST de Moodle
-  storage/
-    client.ts                — cliente de InsForge Storage
   actions/
     auth.ts                  — registro, vinculación org
     invitation.ts            — CRUD de invitaciones de organización
@@ -37,6 +37,8 @@ lib/
 
 app/
   api/
+    health/
+      route.ts               — health check endpoint (para Docker + UptimeRobot)
     webhooks/
       wompi/
         route.ts             — webhook de Wompi (HMAC + idempotencia)
@@ -46,15 +48,17 @@ app/
     admin/
       upload/
         product-cover/
-          route.ts           — upload de imagen de portada a InsForge Storage
+          route.ts           — upload de imagen a Cloudflare R2
         vr-asset/
-          route.ts           — upload de modelo glTF/glb a InsForge Storage
+          route.ts           — upload de modelo glTF/glb a R2
     auth/
       [...all]/
         route.ts             — handler de Better Auth
 ```
 
 ### 1.2 Singleton de PrismaClient
+
+Con Postgres en Docker (conexión TCP directa), el singleton es más simple que antes — no hay pooler externo ni InsForge SDK:
 
 ```ts
 // lib/prisma.ts
@@ -65,7 +69,12 @@ import pg from "pg";
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
 function createPrismaClient() {
-  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+  const pool = new pg.Pool({
+    connectionString: process.env.DATABASE_URL,
+    max: 10,                  // máximo de conexiones en el pool
+    idleTimeoutMillis: 30000, // cerrar conexiones inactivas después de 30s
+    connectionTimeoutMillis: 2000,
+  });
   const adapter = new PrismaPg(pool);
   return new PrismaClient({ adapter });
 }
@@ -77,54 +86,15 @@ if (process.env.NODE_ENV !== "production") {
 }
 ```
 
-**Por qué:** en entornos serverless (Vercel), cada función puede crear su propia instancia de Prisma sin el singleton. Esto agota el pool de conexiones de InsForge incluso con PgBouncer configurado. El singleton reutiliza la conexión entre invocaciones warm.
+**Por qué el singleton sigue siendo necesario:** aunque Next.js en VPS corre como proceso Node.js persistente (no serverless), en desarrollo y en builds se pueden crear múltiples instancias. El singleton previene esto en todos los contextos.
 
 ### 1.3 Patrón de RBAC en Server Actions
 
-Cada Server Action que requiera autenticación o rol específico sigue este patrón:
-
-```ts
-// Patrón base
-async function requireSession() {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session?.user) throw new Error("No autenticado");
-  return session;
-}
-
-async function requireRole(requiredRole: "hospital_admin" | "super_admin") {
-  const session = await requireSession();
-  const userRole = (session.user as any).role as string;
-  const hierarchy: Record<string, number> = {
-    super_admin: 3,
-    hospital_admin: 2,
-    student: 1,
-  };
-  if ((hierarchy[userRole] ?? 0) < hierarchy[requiredRole]) {
-    throw new Error("No autorizado");
-  }
-  return session;
-}
-```
-
-**Defensa en profundidad:** el middleware RBAC (`middleware.ts`) protege rutas a nivel HTTP. Los Server Actions validan el rol de nuevo porque pueden ser llamados desde cualquier client component, incluso fuera de la ruta protegida. RLS en Postgres es la tercera capa.
+Sin cambios respecto a BACKEND v1.0 §1.3.
 
 ### 1.4 Manejo de errores en Server Actions
 
-Las Server Actions devuelven un objeto tipado `{ success: boolean; data?: T; error?: string }` en lugar de lanzar excepciones hacia el cliente. Las excepciones internas se capturan con `try/catch` y se loguean:
-
-```ts
-export async function someAction(input: SomeInput): Promise<ActionResult<SomeData>> {
-  try {
-    await requireSession();
-    // ... lógica
-    return { success: true, data: result };
-  } catch (error) {
-    console.error("[someAction]", error);
-    // No exponer mensajes internos al cliente
-    return { success: false, error: "Ha ocurrido un error. Inténtalo de nuevo." };
-  }
-}
-```
+Sin cambios respecto a BACKEND v1.0 §1.4.
 
 ---
 
@@ -140,7 +110,7 @@ import { prisma } from "@/lib/prisma";
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: "postgresql" }),
-  baseURL: process.env.BETTER_AUTH_URL!, // URL real de Vercel, nunca localhost hardcodeado
+  baseURL: process.env.BETTER_AUTH_URL!, // https://medicamentum360.com — dominio VPS
   trustedOrigins: [process.env.BETTER_AUTH_URL!],
   secret: process.env.BETTER_AUTH_SECRET!,
   emailAndPassword: {
@@ -153,30 +123,35 @@ export const auth = betterAuth({
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     },
   },
-  // Hook post-signup: crear cuenta espejo en Moodle
+  // Rate limiting con Redis (más robusto que memory storage en producción)
+  rateLimit: {
+    window: 60,
+    max: 10,
+    storage: "memory", // cambiar a Redis cuando se implemente el plugin de rate-limit de Better Auth
+  },
   hooks: {
     after: [
       {
         matcher: (context) => context.path === "/sign-up/email",
         handler: async (context) => {
           const user = context.response?.user;
-          if (!user) return;
+          if (!user) return {};
           try {
             const moodleUserId = await moodleClient.createUser({
               username: user.email.split("@")[0],
               email: user.email,
               firstname: user.name?.split(" ")[0] ?? "Usuario",
               lastname: user.name?.split(" ").slice(1).join(" ") ?? "",
-              password: crypto.randomUUID(), // contraseña aleatoria — el acceso es por SSO
+              password: crypto.randomUUID(),
             });
             await prisma.user.update({
               where: { id: user.id },
               data: { moodleUserId },
             });
           } catch (error) {
-            // No bloqueante — registrar y reintentar en background
             console.error("[post-signup] Fallo al crear cuenta Moodle:", error);
           }
+          return {}; // SIEMPRE retornar objeto para evitar crash en Better Auth 1.6.20
         },
       },
     ],
@@ -184,652 +159,88 @@ export const auth = betterAuth({
 });
 ```
 
-**Nota sobre `baseURL`:** si está hardcodeada como `http://localhost:3000` en producción, Better Auth genera cookies y redirects rotos. Usar `process.env.BETTER_AUTH_URL` con el dominio real de Vercel.
-
-**Nota sobre `trustedOrigins`:** debe incluir el dominio de producción y, si se usan Vercel Preview Deployments para pruebas, también el patrón `*.vercel.app` o los dominios específicos de preview.
-
-**Nota sobre RLS y Better Auth:** si RLS está activo en las tablas `User`, `Session`, `Account`, el rol de Postgres usado por Better Auth debe bypassar RLS o tener policies explícitas de `INSERT`/`SELECT` sin depender de `app.current_user_id` (que no existe en el momento del registro).
+**Nota sobre `BETTER_AUTH_URL`:** en VPS, apunta al dominio real `https://medicamentum360.com`. En desarrollo local, usa `http://localhost:3000`. Usa variables de entorno, nunca hardcodes.
 
 ### 2.2 Route Handler de Better Auth
 
-```ts
-// app/api/auth/[...all]/route.ts
-import { auth } from "@/lib/auth";
-import { toNextJsHandler } from "better-auth/next-js";
-
-export const { GET, POST } = toNextJsHandler(auth);
-```
+Sin cambios respecto a BACKEND v1.0 §2.2.
 
 ---
 
-## 3. Webhook de Wompi
+## 3. Health check endpoint
 
 ```ts
-// app/api/webhooks/wompi/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { moodleClient } from "@/lib/moodle/client";
-import { sendPurchaseConfirmation } from "@/lib/email/brevo";
-import crypto from "crypto";
-
-export async function POST(req: NextRequest) {
-  const body = await req.text();
-  const signature = req.headers.get("x-event-checksum") ?? "";
-
-  // 1. Validar firma HMAC-SHA256
-  const expectedSignature = crypto
-    .createHmac("sha256", process.env.WOMPI_EVENTS_SECRET!)
-    .update(body)
-    .digest("hex");
-
-  if (signature !== expectedSignature) {
-    console.error("[webhook/wompi] Firma inválida");
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const event = JSON.parse(body);
-
-  // Solo procesar eventos de transacción aprobada
-  if (event.event !== "transaction.updated") {
-    return NextResponse.json({ received: true });
-  }
-
-  const transaction = event.data.transaction;
-  if (transaction.status !== "APPROVED") {
-    // Actualizar orden a failed si corresponde
-    await prisma.order.updateMany({
-      where: { wompiTransactionId: transaction.id, status: "pending" },
-      data: { status: "failed" },
-    });
-    return NextResponse.json({ received: true });
-  }
-
-  // 2. Idempotencia: verificar si ya procesamos esta transacción
-  const existingOrder = await prisma.order.findUnique({
-    where: { wompiTransactionId: transaction.id },
-    include: { items: { include: { product: true } }, user: true },
-  });
-
-  if (existingOrder?.status === "paid") {
-    // Ya procesado — ignorar silenciosamente
-    return NextResponse.json({ received: true });
-  }
-
-  if (!existingOrder) {
-    console.error("[webhook/wompi] Orden no encontrada para transacción:", transaction.id);
-    return NextResponse.json({ error: "Order not found" }, { status: 404 });
-  }
-
-  // 3. Actualizar orden a paid
-  const paidOrder = await prisma.order.update({
-    where: { id: existingOrder.id },
-    data: {
-      status: "paid",
-      paidAt: new Date(),
-      wompiTransactionId: transaction.id,
-    },
-    include: { items: { include: { product: true } }, user: true },
-  });
-
-  // 4. Procesar cada ítem
-  for (const item of paidOrder.items) {
-    if (item.product.type === "course" && item.product.moodleCourseId) {
-      // 4a. Inscribir en Moodle
-      try {
-        const moodleEnrolId = await moodleClient.enrolUser({
-          userId: paidOrder.user.moodleUserId!,
-          courseId: item.product.moodleCourseId,
-        });
-        await prisma.enrollment.create({
-          data: {
-            userId: paidOrder.userId,
-            productId: item.productId,
-            moodleEnrolId,
-            status: "not_started",
-          },
-        });
-      } catch (error) {
-        console.error("[webhook/wompi] Fallo inscripción Moodle:", error);
-        // TODO: encolar para reintento (background job)
-      }
-    } else if (item.product.type === "vr_experience") {
-      // 4b. Activar VR key (lógica separada — Fase 7)
-      // TODO: asignar VR key disponible al usuario
-    }
-  }
-
-  // 5. Enviar email de confirmación
-  try {
-    await sendPurchaseConfirmation({
-      to: paidOrder.user.email,
-      userName: paidOrder.user.name,
-      items: paidOrder.items.map((i) => ({
-        title: i.product.title,
-        priceCents: i.priceCents,
-      })),
-      totalCents: paidOrder.totalCents,
-    });
-  } catch (error) {
-    console.error("[webhook/wompi] Fallo email de confirmación:", error);
-    // No bloqueante
-  }
-
-  return NextResponse.json({ received: true });
-}
-```
-
----
-
-## 4. Cliente de Moodle
-
-```ts
-// lib/moodle/client.ts
-
-const MOODLE_BASE_URL = process.env.MOODLE_BASE_URL!;
-const MOODLE_WS_TOKEN = process.env.MOODLE_WS_TOKEN!;
-
-async function callMoodleApi(wsfunction: string, params: Record<string, unknown>) {
-  const url = new URL(`${MOODLE_BASE_URL}/webservice/rest/server.php`);
-  url.searchParams.set("wstoken", MOODLE_WS_TOKEN);
-  url.searchParams.set("wsfunction", wsfunction);
-  url.searchParams.set("moodlewsrestformat", "json");
-
-  const body = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (Array.isArray(value)) {
-      value.forEach((item, index) => {
-        if (typeof item === "object" && item !== null) {
-          Object.entries(item as Record<string, unknown>).forEach(([k, v]) => {
-            body.append(`${key}[${index}][${k}]`, String(v));
-          });
-        } else {
-          body.append(`${key}[${index}]`, String(item));
-        }
-      });
-    } else {
-      body.append(key, String(value));
-    }
-  }
-
-  const response = await fetch(url.toString(), {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Moodle API error: ${response.status} ${response.statusText}`);
-  }
-
-  const data = await response.json();
-
-  if (data.exception) {
-    throw new Error(`Moodle exception: ${data.message} (${data.errorcode})`);
-  }
-
-  return data;
-}
-
-export const moodleClient = {
-  // Crear usuario en Moodle
-  async createUser(user: {
-    username: string;
-    email: string;
-    firstname: string;
-    lastname: string;
-    password: string;
-  }): Promise<number> {
-    const result = await callMoodleApi("core_user_create_users", {
-      users: [user],
-    });
-    return result[0].id;
-  },
-
-  // Inscribir usuario en un curso
-  async enrolUser(params: { userId: number; courseId: number }): Promise<void> {
-    await callMoodleApi("enrol_manual_enrol_users", {
-      enrolments: [{ roleid: 5, userid: params.userId, courseid: params.courseId }],
-    });
-  },
-
-  // Obtener progreso del usuario en un curso
-  async getCourseCompletion(params: { userId: number; courseId: number }) {
-    return callMoodleApi("core_completion_get_activities_completion_status", {
-      courseid: params.courseId,
-      userid: params.userId,
-    });
-  },
-
-  // Buscar cursos por nombre (para el panel admin)
-  async searchCourses(query: string) {
-    return callMoodleApi("core_course_get_courses_by_field", {
-      field: "search",
-      value: query,
-    });
-  },
-
-  // Obtener categorías de Moodle (para el select del panel admin)
-  async getCategories() {
-    return callMoodleApi("core_course_get_categories", {});
-  },
-
-  // Crear un nuevo curso en Moodle
-  async createCourse(params: { fullname: string; shortname: string; categoryid: number }) {
-    const result = await callMoodleApi("core_course_create_courses", {
-      courses: [params],
-    });
-    return result[0].id as number;
-  },
-
-  // Generar token de autologin (SSO)
-  async generateAutologinToken(username: string): Promise<string> {
-    const result = await callMoodleApi("auth_userkey_request_login_url", {
-      user: { username },
-    });
-    return result.loginurl as string;
-  },
-};
-```
-
-**Seguridad:** `MOODLE_WS_TOKEN` solo existe en variables de entorno del servidor. Nunca se expone al cliente. Todas las llamadas se hacen desde Server Actions o Route Handlers.
-
----
-
-## 5. Route Handler de autologin SSO a Moodle
-
-```ts
-// app/api/moodle/autologin/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
-import { moodleClient } from "@/lib/moodle/client";
+// app/api/health/route.ts
 import { prisma } from "@/lib/prisma";
 
-export async function POST(req: NextRequest) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session?.user) {
-    return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-  }
-
-  const { courseId } = await req.json();
-
-  // Verificar que el usuario tiene acceso al curso (compra o inscripción)
-  const enrollment = await prisma.enrollment.findUnique({
-    where: { userId_productId: { userId: session.user.id, productId: courseId } },
-    include: { product: true },
-  });
-
-  if (!enrollment) {
-    return NextResponse.json({ error: "No tienes acceso a este curso" }, { status: 403 });
-  }
-
-  const user = await prisma.user.findUnique({ where: { id: session.user.id } });
-  if (!user?.moodleUserId) {
-    return NextResponse.json({ error: "Cuenta de Moodle no encontrada" }, { status: 404 });
-  }
-
-  // Obtener el email del usuario para generar el token de Moodle
-  const loginUrl = await moodleClient.generateAutologinToken(user.email);
-
-  // Añadir wantsurl para ir directamente al curso
-  const urlWithCourse = `${loginUrl}&wantsurl=${encodeURIComponent(
-    `${process.env.MOODLE_BASE_URL}/course/view.php?id=${enrollment.product.moodleCourseId}`
-  )}`;
-
-  return NextResponse.json({ loginUrl: urlWithCourse });
-}
-```
-
----
-
-## 6. Server Actions — Gestión de invitaciones
-
-```ts
-// lib/actions/invitation.ts
-"use server";
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-
-async function requireOrgAdmin() {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session?.user) throw new Error("No autenticado");
-  const role = (session.user as any).role;
-  if (role !== "hospital_admin" && role !== "super_admin") {
-    throw new Error("No autorizado");
-  }
-  return session;
-}
-
-export async function getOrgDetails(orgCode: string) {
-  const org = await prisma.organization.findUnique({ where: { orgCode } });
-  if (!org) return { success: false as const, error: "Código de invitación inválido" };
-  return { success: true as const, data: { name: org.name, id: org.id } };
-}
-
-export async function linkUserToOrganization(orgCode: string) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session?.user) throw new Error("No autenticado");
-
-  const org = await prisma.organization.findUnique({ where: { orgCode } });
-  if (!org) return { success: false as const, error: "Código inválido" };
-
-  await prisma.user.update({
-    where: { id: session.user.id },
-    data: { organizationId: org.id },
-  });
-
-  // Marcar invitación individual como aceptada si existe
-  await prisma.organizationInvitation.updateMany({
-    where: {
-      organizationId: org.id,
-      email: session.user.email,
-      accepted: false,
-    },
-    data: { accepted: true },
-  });
-
-  return { success: true as const };
-}
-
-export async function createInvitation(email: string) {
-  const session = await requireOrgAdmin();
-  const organizationId = (session.user as any).organizationId;
-  if (!organizationId) throw new Error("No perteneces a ninguna organización");
-
-  // Verificar si ya existe invitación pendiente
-  const existing = await prisma.organizationInvitation.findFirst({
-    where: { organizationId, email, accepted: false, expiresAt: { gt: new Date() } },
-  });
-  if (existing) {
-    return { success: false as const, error: "Ya existe una invitación pendiente para este correo" };
-  }
-
-  const org = await prisma.organization.findUnique({ where: { id: organizationId } });
-
-  const invitation = await prisma.organizationInvitation.create({
-    data: {
-      organizationId,
-      email,
-      orgCode: org!.orgCode,
-      invitedByUserId: session.user.id,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 días
-    },
-  });
-
-  // Enviar email de invitación vía Brevo
-  // await sendInvitationEmail({ to: email, orgName: org!.name, orgCode: org!.orgCode });
-
-  return { success: true as const, data: invitation };
-}
-
-export async function listOrgInvitations() {
-  const session = await requireOrgAdmin();
-  const organizationId = (session.user as any).organizationId;
-
-  return prisma.organizationInvitation.findMany({
-    where: { organizationId },
-    orderBy: { createdAt: "desc" },
-  });
-}
-
-export async function deleteInvitation(invitationId: string) {
-  const session = await requireOrgAdmin();
-  const organizationId = (session.user as any).organizationId;
-
-  // Verificar que la invitación pertenece a esta organización
-  const inv = await prisma.organizationInvitation.findUnique({ where: { id: invitationId } });
-  if (!inv || inv.organizationId !== organizationId) {
-    throw new Error("No autorizado");
-  }
-
-  await prisma.organizationInvitation.delete({ where: { id: invitationId } });
-  return { success: true as const };
-}
-
-export async function listOrgMembers() {
-  const session = await requireOrgAdmin();
-  const organizationId = (session.user as any).organizationId;
-
-  return prisma.user.findMany({
-    where: { organizationId },
-    select: { id: true, name: true, email: true, role: true, image: true, createdAt: true },
-    orderBy: { createdAt: "asc" },
-  });
-}
-```
-
----
-
-## 7. Server Actions — Panel admin de productos
-
-```ts
-// lib/actions/admin/products.ts
-"use server";
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { revalidatePath } from "next/cache";
-
-async function requireSuperAdmin() {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session?.user) throw new Error("No autenticado");
-  if ((session.user as any).role !== "super_admin") throw new Error("No autorizado");
-  return session;
-}
-
-function generateSlug(title: string): string {
-  return title
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .trim();
-}
-
-export async function createProduct(data: {
-  title: string;
-  slug?: string;
-  description: string;
-  type: "course" | "vr_experience" | "ai_automation";
-  priceCents: number;
-  discountCents?: number;
-  coverImageUrl?: string;
-  moodleCourseId?: number;
-  vrAssetUrl?: string;
-  capacity?: number;
-}) {
-  await requireSuperAdmin();
-
-  const slug = data.slug ?? generateSlug(data.title);
-
-  // Verificar unicidad del slug
-  const existing = await prisma.product.findUnique({ where: { slug } });
-  if (existing) {
-    return { success: false as const, error: "Este slug ya está en uso" };
-  }
-
-  const product = await prisma.product.create({
-    data: {
-      ...data,
-      slug,
-      published: false,
-    },
-  });
-
-  revalidatePath("/admin/products");
-  return { success: true as const, data: product };
-}
-
-export async function updateProduct(
-  id: string,
-  data: Partial<{
-    title: string;
-    slug: string;
-    description: string;
-    priceCents: number;
-    discountCents: number;
-    coverImageUrl: string;
-    moodleCourseId: number;
-    vrAssetUrl: string;
-    capacity: number;
-  }>
-) {
-  await requireSuperAdmin();
-
-  const product = await prisma.product.update({
-    where: { id },
-    data,
-  });
-
-  revalidatePath("/admin/products");
-  revalidatePath(`/productos/${product.slug}`);
-  return { success: true as const, data: product };
-}
-
-export async function publishProduct(id: string) {
-  await requireSuperAdmin();
-
-  const product = await prisma.product.findUnique({ where: { id } });
-  if (!product) return { success: false as const, error: "Producto no encontrado" };
-
-  // Advertencia: curso sin Moodle
-  if (product.type === "course" && !product.moodleCourseId) {
-    // El frontend debe confirmar antes de llamar esta acción
-    // Si llega aquí sin moodleCourseId, se publica con advertencia en el log
-    console.warn(`[publishProduct] Producto curso publicado sin moodleCourseId: ${id}`);
-  }
-
-  const updated = await prisma.product.update({
-    where: { id },
-    data: { published: true },
-  });
-
-  // Indexar en Meilisearch
-  // await meilisearchClient.index("products").addDocuments([formatForMeilisearch(updated)]);
-
-  revalidatePath("/productos");
-  revalidatePath(`/productos/${updated.slug}`);
-  revalidatePath("/admin/products");
-
-  return { success: true as const, data: updated };
-}
-
-export async function unpublishProduct(id: string) {
-  await requireSuperAdmin();
-
-  const updated = await prisma.product.update({
-    where: { id },
-    data: { published: false },
-  });
-
-  // Eliminar de Meilisearch
-  // await meilisearchClient.index("products").deleteDocument(id);
-
-  revalidatePath("/productos");
-  revalidatePath("/admin/products");
-  return { success: true as const };
-}
-
-export async function deleteProduct(id: string) {
-  await requireSuperAdmin();
-
-  const product = await prisma.product.findUnique({ where: { id } });
-  if (!product) return { success: false as const, error: "Producto no encontrado" };
-
-  // No permitir eliminar si hay órdenes pagadas asociadas
-  const paidOrderItems = await prisma.orderItem.count({
-    where: { productId: id, order: { status: "paid" } },
-  });
-  if (paidOrderItems > 0) {
-    return {
-      success: false as const,
-      error: "No se puede eliminar un producto con compras realizadas. Desactívalo en su lugar.",
-    };
-  }
-
-  await prisma.product.delete({ where: { id } });
-
-  // Eliminar de Meilisearch si estaba publicado
-  // if (product.published) await meilisearchClient.index("products").deleteDocument(id);
-
-  revalidatePath("/admin/products");
-  return { success: true as const };
-}
-```
-
----
-
-## 8. Server Actions — Moodle desde el panel admin
-
-```ts
-// lib/actions/admin/moodle.ts
-"use server";
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
-import { moodleClient } from "@/lib/moodle/client";
-
-async function requireSuperAdmin() {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session?.user) throw new Error("No autenticado");
-  if ((session.user as any).role !== "super_admin") throw new Error("No autorizado");
-}
-
-export async function searchMoodleCourses(query: string) {
-  await requireSuperAdmin();
+export async function GET() {
   try {
-    const courses = await moodleClient.searchCourses(query);
-    return {
-      success: true as const,
-      data: courses.map((c: any) => ({ id: c.id, fullname: c.fullname, shortname: c.shortname })),
-    };
+    // Verificar conexión a Postgres
+    await prisma.$queryRaw`SELECT 1`;
+    return Response.json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      services: { database: "ok" },
+    });
   } catch (error) {
-    console.error("[searchMoodleCourses]", error);
-    return { success: false as const, error: "No se pudo conectar con Moodle" };
-  }
-}
-
-export async function getMoodleCategories() {
-  await requireSuperAdmin();
-  try {
-    const categories = await moodleClient.getCategories();
-    return {
-      success: true as const,
-      data: categories.map((c: any) => ({ id: c.id, name: c.name })),
-    };
-  } catch (error) {
-    console.error("[getMoodleCategories]", error);
-    return { success: false as const, error: "No se pudo obtener las categorías de Moodle" };
-  }
-}
-
-export async function createMoodleCourse(params: {
-  fullname: string;
-  shortname: string;
-  categoryid: number;
-}): Promise<{ success: boolean; data?: { moodleCourseId: number }; error?: string }> {
-  await requireSuperAdmin();
-  try {
-    const moodleCourseId = await moodleClient.createCourse(params);
-    return { success: true, data: { moodleCourseId } };
-  } catch (error) {
-    console.error("[createMoodleCourse]", error);
-    return { success: false, error: "No se pudo crear el curso en Moodle" };
+    return Response.json(
+      { status: "error", services: { database: "error" } },
+      { status: 503 }
+    );
   }
 }
 ```
 
+Este endpoint es usado por Docker healthcheck (`DEPLOY.md §8`) y UptimeRobot.
+
 ---
 
-## 9. Route Handlers de upload
+## 4. Webhook de Wompi
+
+Sin cambios respecto a BACKEND v1.0 §3.
+
+**Nota para VPS:** el webhook funciona exactamente igual. Wompi llama a `https://medicamentum360.com/api/webhooks/wompi` — el dominio del VPS con SSL de Let's Encrypt.
+
+---
+
+## 5. Cliente de Moodle
+
+Sin cambios respecto a BACKEND v1.0 §4.
+
+---
+
+## 6. Route Handler de autologin SSO a Moodle
+
+Sin cambios respecto a BACKEND v1.0 §5.
+
+---
+
+## 7. Server Actions — Gestión de invitaciones
+
+Sin cambios respecto a BACKEND v1.0 §6.
+
+---
+
+## 8. Server Actions — Panel admin de productos
+
+Sin cambios respecto a BACKEND v1.0 §7.
+
+---
+
+## 9. Server Actions — Moodle desde el panel admin
+
+Sin cambios respecto a BACKEND v1.0 §8.
+
+---
+
+## 10. Route Handlers de upload (actualizado para Cloudflare R2)
 
 ```ts
 // app/api/admin/upload/product-cover/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
+import { uploadFile } from "@/lib/storage/client";
 
 const MAX_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -852,29 +263,71 @@ export async function POST(req: NextRequest) {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const filename = `${Date.now()}-${file.name.replace(/[^a-z0-9.\-]/gi, "_")}`;
+  const ext = file.type.split("/")[1];
+  const filename = `product-covers/${Date.now()}-${crypto.randomUUID()}.${ext}`;
 
-  // Subir a InsForge Storage (bucket product-covers/)
-  // const url = await storageClient.upload(`product-covers/${filename}`, buffer, file.type);
-  // return NextResponse.json({ url });
-
-  // Placeholder hasta implementar storageClient:
-  return NextResponse.json({ url: `/uploads/product-covers/${filename}` });
+  const url = await uploadFile(filename, buffer, file.type);
+  return NextResponse.json({ url });
 }
+```
+
+```ts
+// lib/storage/client.ts — Cloudflare R2 (compatible S3)
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
+const s3 = new S3Client({
+  region: "auto",
+  endpoint: process.env.STORAGE_ENDPOINT!,
+  credentials: {
+    accessKeyId: process.env.STORAGE_ACCESS_KEY!,
+    secretAccessKey: process.env.STORAGE_SECRET_KEY!,
+  },
+});
+
+const BUCKET = process.env.STORAGE_BUCKET!;
+
+export async function uploadFile(key: string, body: Buffer, contentType: string): Promise<string> {
+  await s3.send(new PutObjectCommand({
+    Bucket: BUCKET,
+    Key: key,
+    Body: body,
+    ContentType: contentType,
+  }));
+  return `${process.env.STORAGE_PUBLIC_URL}/${key}`;
+}
+
+export async function getSignedDownloadUrl(key: string, expiresInSeconds = 3600): Promise<string> {
+  return getSignedUrl(
+    s3,
+    new GetObjectCommand({ Bucket: BUCKET, Key: key }),
+    { expiresIn: expiresInSeconds }
+  );
+}
+```
+
+**Instalar dependencias:**
+```bash
+npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
 ```
 
 ---
 
-## 10. Variables de entorno (referencia completa)
+## 11. Variables de entorno (referencia completa — VPS)
 
 ```env
-# Base de datos (InsForge)
-DATABASE_URL=postgresql://...?pgbouncer=true    # pooled — runtime
-DIRECT_URL=postgresql://...                     # directa — solo migraciones
+# Postgres (Docker en VPS, acceso TCP directo)
+DATABASE_URL=postgresql://medicamentum:<password>@postgres:5432/medicamentum360
+DIRECT_URL=postgresql://medicamentum:<password>@postgres:5432/medicamentum360
+# En VPS con Docker, ambas son iguales — no hay pooler PgBouncer externo
+
+# Postgres credentials (para docker-compose.yml)
+POSTGRES_USER=medicamentum
+POSTGRES_PASSWORD=<openssl rand -base64 32>
 
 # Better Auth
-BETTER_AUTH_SECRET=...
-BETTER_AUTH_URL=https://tu-dominio.vercel.app   # NUNCA localhost hardcodeado en producción
+BETTER_AUTH_SECRET=<openssl rand -base64 32>
+BETTER_AUTH_URL=https://medicamentum360.com
 
 # Google OAuth
 GOOGLE_CLIENT_ID=...
@@ -887,15 +340,22 @@ WOMPI_EVENTS_SECRET=...
 
 # Moodle
 MOODLE_BASE_URL=https://lms.medicamentum360.com
-MOODLE_WS_TOKEN=...                             # NUNCA exponer al cliente
+MOODLE_WS_TOKEN=...
 
-# Meilisearch
-MEILISEARCH_HOST=...
-MEILISEARCH_API_KEY=...
+# Redis (Docker)
+REDIS_PASSWORD=<openssl rand -base64 32>
+REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
 
-# InsForge Storage
-INSFORGE_STORAGE_URL=...
-INSFORGE_STORAGE_KEY=...
+# Meilisearch (Docker)
+MEILI_MASTER_KEY=<openssl rand -base64 32>
+MEILI_HOST=http://meilisearch:7700
+
+# Storage — Cloudflare R2
+STORAGE_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+STORAGE_ACCESS_KEY=...
+STORAGE_SECRET_KEY=...
+STORAGE_BUCKET=medicamentum360
+STORAGE_PUBLIC_URL=https://storage.medicamentum360.com
 
 # Brevo
 BREVO_API_KEY=...
@@ -906,24 +366,40 @@ NEXT_PUBLIC_BRAND_COLOR=#8127cf
 
 ---
 
-## 11. Seguridad — checklist pre-producción
+## 12. Seguridad — checklist pre-producción (adaptado a VPS)
 
-- [ ] RLS cross-org test (`tests/rls-isolation-test.sql`) pasa en CI — ver `PLAN.md §Fase 2.5`.
-- [ ] Webhook de Wompi: test de idempotencia (mismo evento dos veces no duplica inscripción ni orden).
-- [ ] Test de autologin token: expira en segundos, uso único, no reutilizable.
-- [ ] `MOODLE_WS_TOKEN` solo en variables de servidor — nunca en `NEXT_PUBLIC_*` ni en client components.
-- [ ] `BETTER_AUTH_URL` apunta al dominio real, no a `localhost`.
-- [ ] `trustedOrigins` en Better Auth incluye el dominio de producción.
-- [ ] Google OAuth: `Authorized redirect URI` incluye `https://<dominio>/api/auth/callback/google`.
-- [ ] Rate limiting activo en `/api/auth/sign-up` y `/api/auth/sign-in` (middleware o librería).
-- [ ] Singleton de PrismaClient activo — no instanciar `new PrismaClient()` dentro de handlers.
-- [ ] URLs firmadas con expiración corta para `certificates/` e `invoices/` en Storage.
+- [ ] RLS cross-org test (`tests/rls-isolation-test.sql`) pasa — ejecutar con `docker exec -i medicamentum_postgres psql -U medicamentum -d medicamentum360 < tests/rls-isolation-test.sql`
+- [ ] Webhook de Wompi: test de idempotencia (mismo evento dos veces no duplica inscripción ni orden)
+- [ ] Test de autologin token: expira en segundos, uso único
+- [ ] `MOODLE_WS_TOKEN` solo en variables de servidor — nunca en `NEXT_PUBLIC_*`
+- [ ] `BETTER_AUTH_URL` apunta al dominio real VPS, no a localhost
+- [ ] `trustedOrigins` incluye el dominio de producción
+- [ ] Google OAuth: Authorized redirect URI = `https://medicamentum360.com/api/auth/callback/google`
+- [ ] Nginx con rate limiting activo en `/api/auth/`
+- [ ] Singleton de PrismaClient activo — no instanciar `new PrismaClient()` dentro de handlers
+- [ ] URLs firmadas con expiración para `certificates/` e `invoices/` en Cloudflare R2
+- [ ] Firewall UFW activo (solo puertos 22, 80, 443)
+- [ ] Nginx NO expone Meilisearch (7700) ni Postgres (5432) al exterior
+- [ ] Backups automáticos de Postgres configurados (ver `DEPLOY.md §10`)
 
 ---
 
-## 12. Logging y observabilidad
+## 13. Logging y observabilidad
 
-- Server Actions críticos (pago, inscripción Moodle, creación de usuario espejo, generación de certificado) deben emitir logs estructurados con `console.error` + contexto suficiente para debuggear en Vercel Runtime Logs.
-- Formato sugerido: `[nombre-acción] mensaje: ${JSON.stringify({ userId, productId, error })}`.
-- En producción: evaluar Sentry para error tracking automático (decisión pendiente, ver `PLAN.md §Fase 13`).
-- Eventos de analítica clave a implementar en GA4/Posthog: `add_to_cart`, `begin_checkout`, `purchase`, `course_started`, `course_completed`.
+- Server Actions críticos emiten logs estructurados con `console.error` + contexto suficiente
+- Formato: `[nombre-acción] mensaje: ${JSON.stringify({ userId, productId, error })}`
+- En producción (VPS): `docker compose logs -f app` para ver logs en tiempo real
+- Sentry para error tracking automático: `npm install @sentry/nextjs` + `npx @sentry/wizard@latest -i nextjs`
+- Eventos de analítica: `add_to_cart`, `begin_checkout`, `purchase`, `course_started`, `course_completed`
+
+---
+
+## 14. Eliminado respecto a BACKEND v1.0
+
+Los siguientes patrones de BACKEND v1.0 ya NO aplican:
+
+- `createAdminClient({ apiKey })` de `@insforge/sdk` — eliminado; usar Prisma directamente
+- `npx @insforge/cli db query` para migraciones — eliminado; usar `prisma migrate deploy`
+- `DATABASE_URL` con `?pgbouncer=true` — no necesario; Postgres en Docker es acceso TCP directo
+- `pooler.<appkey>.us-east.insforge.app` — no aplica; Postgres está en `postgres:5432` (Docker network)
+- Bridge JWT route `/api/insforge-token` — ya no necesario (el RLS funciona con la conexión directa de Prisma y el JWT de Better Auth en las policies)

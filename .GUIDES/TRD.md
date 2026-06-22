@@ -1,492 +1,333 @@
 # TRD — Medicamentum360
 **Technical Requirements Document**
-Versión: 1.0 · Fecha: 2026-06-19
-Stack confirmado en sesiones previas — este documento detalla la implementación técnica de los requisitos del PRD.md.
+Versión: 2.0 · Fecha: 2026-06-22
+Stack actualizado a despliegue VPS auto-alojado — reemplaza referencias a Vercel e InsForge.
+
+> **Cambio mayor v2.0:** la plataforma de hosting pasa de Vercel + InsForge a **VPS propio con Docker Compose**. La base de datos es ahora **Postgres gestionado en el mismo VPS** (o managed externo como Neon/Supabase si se prefiere). El storage de archivos es **Cloudflare R2 o MinIO**. Ver `DEPLOY.md` para la guía completa de infraestructura.
 
 ---
 
 ## 1. Arquitectura general
 
 ```
-                         ┌─────────────────────────┐
-                         │   medicamentum360.com    │
-                         │  Next.js App Router (SSR/│
-                         │  SSG público, RSC priv.) │
-                         └───────────┬──────────────┘
+                     ┌─────────────────────────┐
+                     │   medicamentum360.com    │
+                     │  Next.js App Router (SSR/│
+                     │  SSG público, RSC priv.) │
+                     │  Docker — standalone mode│
+                     └───────────┬──────────────┘
+                                  │  Nginx (SSL, proxy, rate limit)
+        ┌───────────────────────────────────────────────────┐
+        │                          │                         │
+┌───────▼────────┐       ┌─────────▼─────────┐    ┌────────▼───────────┐
+│ Postgres        │       │  Server Actions /  │    │  Cloudflare R2     │
+│ (Docker en VPS) │◄─────►│  Route Handlers    │───►│  (imágenes, PDFs,  │
+│ Prisma ORM      │       │  (lógica de negocio│    │  certificados)     │
+└─────────────────┘       └─────────┬──────────┘    └────────────────────┘
                                      │
-        ┌────────────────────────────┼────────────────────────────┐
-        │                            │                            │
-┌───────▼────────┐         ┌─────────▼─────────┐        ┌─────────▼─────────┐
-│ InsForge        │         │  Server Actions /  │        │  InsForge Storage  │
-│ Postgres + RLS  │◄───────►│  Route Handlers    │───────►│  (imágenes, PDFs,  │
-│ (Prisma ORM)    │         │  (lógica de negocio)│        │  certificados)     │
-└─────────────────┘         └─────────┬──────────┘        └────────────────────┘
-                                       │
-       ┌───────────────────┬──────────┼───────────────┬────────────────┐
-       │                   │          │                │                │
-┌──────▼──────┐   ┌────────▼───┐ ┌────▼─────┐  ┌───────▼──────┐ ┌───────▼──────┐
-│ Better Auth │   │  Wompi API │ │ Moodle   │  │ Meilisearch  │ │    Brevo     │
-│ (sesiones,  │   │  + Webhook │ │ Web      │  │  (búsqueda   │ │ (email       │
-│ Google OAuth)│  │  HMAC      │ │ Services │  │  marketplace)│ │ transaccional)│
-└─────────────┘   └────────────┘ └────┬─────┘  └──────────────┘ └──────────────┘
-                                       │
-                              ┌────────▼─────────┐
-                              │ lms.medicamentum  │
-                              │ 360.com (Moodle)  │
-                              └───────────────────┘
+┌──────────────┬──────────────┬──────┴──────┬────────────┐
+│              │              │             │            │
+┌──────▼──────┐ ┌──────▼──────┐ ┌───▼────┐ ┌───▼──────┐ ┌───▼────┐
+│ Better Auth │ │  Wompi API  │ │ Moodle │ │Meili-    │ │ Brevo  │
+│ (sesiones,  │ │  + Webhook  │ │ WS API │ │search    │ │ (email)│
+│ Google OAuth)│ │  HMAC      │ │ SSO    │ │(Docker)  │ │        │
+└─────────────┘ └─────────────┘ └───┬────┘ └──────────┘ └────────┘
+                                     │
+                            ┌────────▼─────────┐
+                            │ lms.medicamentum  │
+                            │ 360.com (Moodle)  │
+                            └───────────────────┘
 ```
 
-### 1.1 Qué se despliega dónde (aclaración explícita — fuente de confusión real ya detectada)
+### 1.1 Qué se despliega dónde
 
-InsForge **no es una plataforma de hosting de aplicaciones**. No hay nada que "desplegar" ahí. Es exclusivamente un proveedor de infraestructura backend:
-
-| Pieza | Dónde vive / se despliega | Qué NO es |
+| Pieza | Dónde vive | Notas |
 |---|---|---|
-| Aplicación Next.js (páginas, Server Actions, Route Handlers, webhooks) | **Vercel** (o equivalente compatible con App Router) | No vive en InsForge. InsForge no ejecuta tu código de aplicación. |
-| Base de datos Postgres + RLS | **InsForge** | Solo expone connection strings (`DATABASE_URL`/`DIRECT_URL`) que la app desplegada en Vercel consume desde afuera. |
-| Storage (avatares, certificados, facturas) | **InsForge Storage** | Igual que la DB: la app en Vercel le habla por API/SDK, no "vive" dentro de InsForge. |
-| Moodle | `lms.medicamentum360.com`, su propio servidor (o el contenedor Docker local en desarrollo) | Independiente de Vercel e InsForge por completo. |
+| Aplicación Next.js (páginas, Server Actions, Route Handlers, webhooks) | **VPS propio** — Docker container, modo standalone | Nginx como reverse proxy delante |
+| Base de datos Postgres | **VPS propio** — Docker container con volumen persistente | O managed externo: Neon/Supabase/Railway |
+| Storage (avatares, certificados, facturas, modelos VR) | **Cloudflare R2** (recomendado) o **MinIO** auto-alojado | API compatible con AWS S3 |
+| Caché / rate limiting | **Redis** — Docker container | Rate limiting de Better Auth + caché de sesiones |
+| Búsqueda | **Meilisearch** — Docker container | |
+| Moodle (LMS) | `lms.medicamentum360.com` — VPS separado o mismo VPS con subdomain | Solo Docker local en desarrollo |
 
-La relación es siempre: **Vercel aloja y ejecuta la app → la app se conecta hacia afuera a InsForge (DB/Storage), Moodle, Wompi, Meilisearch y Brevo usando credenciales en variables de entorno.** Nunca al revés. Si en algún punto el flujo de trabajo intenta "desplegar en InsForge", es un error de modelo mental — no existe ese paso.
+### 1.2 Por qué VPS en lugar de Vercel
+
+- **Costo predecible:** VPS desde $5–20/mes vs. Vercel Pro con costos variables por función invocación
+- **Sin límites de serverless:** Server Actions y webhooks corren como proceso Node.js persistente; no hay timeout de 10s ni cold starts
+- **Control total:** logs, configuración de Nginx, firewall, backups propios
+- **Sin vendor lock-in:** el código Next.js con `output: 'standalone'` corre en cualquier VPS
+- **Postgres propio:** sin el modelo de InsForge (que no exponía conexión TCP directa y requería su propio SDK)
+
+---
 
 ## 2. Stack tecnológico
 
 | Capa | Tecnología | Notas |
 |---|---|---|
-| Framework | Next.js (App Router) | SSR/SSG público, Server Actions para mutaciones privadas |
-| DB | InsForge Postgres | Acceso vía Prisma ORM |
-| ORM | Prisma | Migraciones versionadas, `schema.prisma` como fuente de verdad |
-| Seguridad de datos | Row Level Security (RLS) a nivel Postgres | Aislamiento multi-tenant obligatorio antes de pagos |
-| Auth | Better Auth | Email+password, Google OAuth, sesiones, roles |
-| Pagos | Wompi | Pago único MVP, webhook con validación HMAC-SHA256 |
-| LMS | Moodle (headless) | Subdominio `lms.medicamentum360.com`, API REST + SSO |
-| Búsqueda | Meilisearch | Índice de catálogo (productos) |
-| Storage | InsForge Storage | Avatares, portadas de producto, certificados PDF, facturas |
-| Email | Brevo | Transaccional (confirmación, recuperación, certificados) |
-| 3D/VR | React Three Fiber + Three.js + WebXR | Visor de preview de experiencias VR |
-| Analítica | GA4 / Posthog | A definir cuál se usa en Fase 8 |
+| Framework | Next.js 15 (App Router, standalone mode) | SSR/SSG público, Server Actions para mutaciones |
+| DB | Postgres 16 (Docker en VPS) | Acceso vía Prisma ORM + conexión TCP directa |
+| ORM | Prisma 7 (con `@prisma/adapter-pg`) | Migraciones con `prisma migrate deploy` |
+| Seguridad de datos | Row Level Security (RLS) en Postgres | Aislamiento multi-tenant — obligatorio antes de pagos |
+| Auth | Better Auth 1.6.20 | Email+password, Google OAuth, sesiones, roles |
+| Caché / Rate Limit | Redis 7 (Docker) | Rate limiting de Better Auth, caché de sesiones |
+| Pagos | Wompi | Webhook con validación HMAC-SHA256 |
+| LMS | Moodle (headless) | `lms.medicamentum360.com`, API REST + SSO |
+| Búsqueda | Meilisearch v1.13 (Docker) | Índice de catálogo de productos |
+| Storage | Cloudflare R2 (o MinIO auto-alojado) | Avatares, portadas, certificados PDF, modelos glTF |
+| Email | Brevo | Transaccional |
+| 3D/VR | React Three Fiber + Three.js + WebXR | Visor de preview |
+| Reverse proxy | Nginx (Docker) | SSL, rate limiting, static files, streaming |
+| SSL | Let's Encrypt + Certbot | Renovación automática vía Docker |
+| Contenedores | Docker Compose | Orquestación en VPS único |
+| CI/CD | GitHub Actions | Test + deploy automático via SSH al VPS |
+| Analítica | GA4 / Posthog | A definir en Fase 10 |
 
-## 3. Modelo de datos (Prisma — esquema de referencia)
+---
+
+## 3. Modelo de datos (Prisma — sin cambios respecto a v1.0)
+
+El esquema Prisma es idéntico. La diferencia operativa es que las migraciones ahora corren con `npx prisma migrate deploy` directamente (Postgres expone conexión TCP estándar), sin necesidad del InsForge CLI.
 
 ```prisma
-enum Role {
-  super_admin
-  hospital_admin
-  student
+// datasource actualizado — conexión directa sin workarounds
+datasource db {
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  directUrl         = env("DIRECT_URL")  // misma URL en VPS (sin pooler externo)
 }
 
-enum ProductType {
-  course
-  vr_experience
-  ai_automation
-}
-
-enum OrderStatus {
-  pending
-  paid
-  failed
-  refunded
-}
-
-model Organization {
-  id        String   @id @default(cuid())
-  name      String
-  nit       String?
-  orgCode   String   @unique // código de invitación único por organización
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  users       User[]
-  orders      Order[]
-  invitations OrganizationInvitation[]
-
-  @@map("organizations")
-}
-
-model Plan {
-  id          String   @id @default(cuid())
-  name        String
-  description String
-  priceCents  Int
-  features    String[] // array de características incluidas
-  recommended Boolean  @default(false)
-  active      Boolean  @default(true)
-  sortOrder   Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@map("plans")
-}
-
-model OrganizationInvitation {
-  id              String       @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  email           String
-  role            Role         @default(student)
-  orgCode         String       @unique // código compartido para todos los invitados de esta org
-  invitedByUserId String
-  expiresAt       DateTime
-  accepted        Boolean      @default(false)
-  createdAt       DateTime     @default(now())
-
-  @@index([organizationId, email])
-  @@map("organization_invitations")
-}
-
-model User {
-  id             String        @id @default(cuid())
-  email          String        @unique
-  name           String
-  lastName       String?
-  emailVerified  Boolean       @default(false)
-  image          String?
-  role           Role          @default(student)
-  organizationId String?
-  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
-  moodleUserId   Int?          @unique  // mapeo cuenta espejo en Moodle
-  profilePicUrl  String?
-  specialty      String?
-  locale         String        @default("es")
-  theme          String        @default("system")
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-
-  enrollments    Enrollment[]
-  orders         Order[]
-  cartItems      CartItem[]
-  certificates   Certificate[]
-  reviews        Review[]
-  calendarEvents CalendarEvent[]
-  sessions       Session[]
-  accounts       Account[]
-
-  @@map("users")
-}
-
-model Session {
-  id        String   @id @default(cuid())
-  expiresAt DateTime
-  token     String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  ipAddress String?
-  userAgent String?
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("session")
-}
-
-model Account {
-  id                    String    @id @default(cuid())
-  accountId             String
-  providerId            String
-  userId                String
-  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accessToken           String?
-  refreshToken          String?
-  idToken               String?
-  accessTokenExpiresAt  DateTime?
-  refreshTokenExpiresAt DateTime?
-  scope                 String?
-  password              String?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-
-  @@map("account")
-}
-
-model Verification {
-  id         String   @id @default(cuid())
-  identifier String
-  value      String
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  @@map("verification")
-}
-
-model Product {
-  id             String      @id @default(cuid())
-  type           ProductType
-  title          String
-  slug           String      @unique
-  description    String
-  priceCents     Int
-  discountCents  Int?
-  coverImageUrl  String?
-  moodleCourseId Int?      // null si type = vr_experience o ai_automation
-  vrAssetUrl     String?     // modelo/escena para preview R3F
-  capacity       Int?        // cupo restante para cursos con plazas limitadas
-  published      Boolean     @default(false)
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
-
-  enrollments Enrollment[]
-  orderItems  OrderItem[]
-  reviews     Review[]
-
-  @@map("products")
-}
-
-model Enrollment {
-  id             String    @id @default(cuid())
-  userId         String
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  productId      String
-  product        Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  progressPct    Int       @default(0)
-  status         String    @default("not_started") // not_started | in_progress | completed
-  moodleEnrolId  Int?
-  lastAccessedAt DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-
-  @@unique([userId, productId])
-  @@map("enrollments")
-}
-
-model Cart {
-  id         String     @id @default(cuid())
-  userId     String?    @unique // null = invitado, identificado por cookie/session token
-  guestToken String?    @unique
-  items      CartItem[]
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
-
-  @@map("carts")
-}
-
-model CartItem {
-  id        String   @id @default(cuid())
-  cartId    String
-  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
-  productId String
-  quantity  Int      @default(1)
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("cart_items")
-}
-
-model Order {
-  id                 String        @id @default(cuid())
-  userId             String
-  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  organizationId     String?
-  organization       Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
-  status             OrderStatus   @default(pending)
-  subtotalCents      Int
-  taxCents           Int
-  totalCents         Int
-  billingDocType     String      // NIT | CC
-  billingDocId       String
-  wompiTransactionId String?       @unique
-  items              OrderItem[]
-  createdAt          DateTime      @default(now())
-  paidAt             DateTime?
-  updatedAt          DateTime      @updatedAt
-
-  @@map("orders")
-}
-
-model OrderItem {
-  id         String   @id @default(cuid())
-  orderId    String
-  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId  String
-  product    Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
-  priceCents Int
-  quantity   Int      @default(1)
-  createdAt  DateTime @default(now())
-
-  @@map("order_items")
-}
-
-model Certificate {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  productId   String
-  pdfUrl      String
-  issuedAt    DateTime @default(now())
-  linkedinUrl String?
-  createdAt   DateTime @default(now())
-
-  @@map("certificates")
-}
-
-model Review {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  productId String
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  rating    Int
-  comment   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("reviews")
-}
-
-model CalendarEvent {
-  id            String    @id @default(cuid())
-  userId        String
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title         String
-  startsAt      DateTime
-  endsAt        DateTime?
-  googleEventId String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  @@map("calendar_events")
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 ```
 
-> Nota: este esquema es de referencia. Antes de migrar, validar contra `MASTER_PROMPT.md` / `DESIGN.md` existentes para evitar divergencias con decisiones ya tomadas en sesiones previas.
+> El esquema completo de modelos (`User`, `Product`, `Order`, etc.) se mantiene igual que en TRD v1.0 §3. No se reproduce aquí para evitar divergencias — la fuente de verdad es `prisma/schema.prisma`.
+
+---
 
 ## 4. RLS y seguridad multi-tenant
 
-Reglas obligatorias por tabla con `organizationId` o `userId`:
+Sin cambios respecto a TRD v1.0 §4. El aislamiento RLS funciona igual en Postgres propio.
 
-- `User`: un `hospital_admin` solo puede leer/listar usuarios de su propia `organizationId`. `student` solo puede leer su propio registro. `super_admin` sin restricción.
-- `Order` / `OrderItem`: visibles solo para el `userId` dueño o el `hospital_admin` de la misma `organizationId`.
-- `Enrollment`: visible para el propio `userId`, o para `hospital_admin` de la misma organización en modo agregado (solo progreso, no contenido).
-- `CalendarEvent`: estrictamente por `userId`, sin excepción de `hospital_admin`.
+**Cambio operativo:** con Postgres en Docker en el VPS, puedes conectarte directamente para verificar o correr tests RLS:
+```bash
+docker exec -it medicamentum_postgres psql -U medicamentum -d medicamentum360
+```
 
-**Criterio de aceptación bloqueante:** antes de habilitar pagos reales en producción, ejecutar y documentar un **test de aislamiento cruzado**: un `hospital_admin` de la Organización A intenta leer datos de la Organización B vía API/Server Action y debe recibir 0 resultados o 403, en todas las tablas con RLS activo.
+Las 29 policies, los helpers `requesting_user_id()` y `get_user_org_id()`, y el bridge JWT de `PROGRESS.md` se mantienen sin cambios.
+
+**Criterio de aceptación bloqueante:** igual que antes — test de aislamiento cross-org antes de habilitar pagos reales.
+
+---
 
 ## 5. Autenticación y autorización
 
-- Better Auth maneja sesión + Google OAuth. Rol (`Role`) se almacena en el modelo `User` y se inyecta en la sesión (JWT o cookie de sesión, según configuración de Better Auth).
-- **Middleware RBAC** (`middleware.ts`): valida sesión + role a nivel de ruta antes de permitir acceso.
-  - Rutas protegidas: `/dashboard`, `/configuracion`, `/checkout`, `/mis-cursos` — requieren sesión.
-  - Rutas org: `/org` — requieren `hospital_admin` o superior.
-  - Rutas admin: `/admin` — requieren `super_admin`.
-  - Jerarquía de roles: `super_admin` (3) > `hospital_admin` (2) > `student` (1).
-  - Unauthenticated → redirect a `/sign-in?redirect_to=...`.
-  - Sin permiso → redirect a `/dashboard`.
-- **Server Actions RBAC:** cada acción valida `role` explícitamente además de confiar en RLS (defensa en profundidad).
-  - `lib/actions/invitation.ts`: `createInvitation`, `listOrgInvitations`, `deleteInvitation` — solo `hospital_admin`/`super_admin`.
-  - `lib/actions/organization.ts`: `linkUserToOrganization` — cualquier usuario autenticado (se vincula post-registro).
-- **Sistema de invitaciones:** `/sign-up?org_code=HOSP123` vincula automáticamente al usuario a la organización del código.
-- **MVP adicional:** verificación de email, CAPTCHA en registro, rate limiting (ver BACKEND.md §8).
-- **Backlog:** 2FA TOTP para `hospital_admin` y `super_admin`.
+Sin cambios conceptuales. Ajuste de variables de entorno:
 
-## 6. Integración con Moodle (detalle técnico)
+```ts
+// lib/auth.ts
+export const auth = betterAuth({
+  database: prismaAdapter(prisma, { provider: "postgresql" }),
+  baseURL: process.env.BETTER_AUTH_URL!, // https://medicamentum360.com
+  trustedOrigins: [process.env.BETTER_AUTH_URL!],
+  // ...
+});
+```
 
-### Modo 1 — API REST (MVP)
-- Cliente server-side `lib/moodle/client.ts` que envuelve `core_course_get_courses`, `core_user_get_users`, `core_user_create_users`, `enrol_manual_enrol_users`, `core_completion_get_activities_completion_status`, `core_grades_get_grades`.
-- Token de Web Services almacenado como `MOODLE_WS_TOKEN` (env var, server-only, nunca expuesto al cliente).
-- Todas las llamadas se hacen desde Route Handlers o Server Actions, nunca desde el cliente.
+**`BETTER_AUTH_URL`** ahora apunta al dominio del VPS (`https://medicamentum360.com`), no a una URL de Vercel.
 
-### Modo 2 — SSO/Autologin (MVP)
-- Endpoint propio `POST /api/moodle/autologin` genera token de un solo uso vía `auth_userkey` (o plugin equivalente de autologin) y retorna URL de redirección a Moodle.
-- Token expira en segundos; uso único.
+**Google OAuth:** en Google Cloud Console, el Authorized redirect URI debe ser `https://medicamentum360.com/api/auth/callback/google`.
 
-### Modo 3 — LTI 1.3 (post-MVP)
-- Medicamentum360 = LTI Platform; Moodle = LTI Tool.
-- Intercambio de identidad vía JWT firmado con RSA (par de llaves registrado en ambos sistemas).
-- Servicio de calificaciones (Assignment and Grading Services) sincroniza progreso en tiempo real de vuelta a la DB propia.
-- Requiere configurar `Content-Security-Policy: frame-ancestors` en Moodle para permitir embeber desde `medicamentum360.com`.
+---
 
-### Sincronización de usuarios
-- Al registrarse en Medicamentum360, se crea automáticamente una cuenta espejo en Moodle (mismo correo) vía `core_user_create_users`. Se persiste `moodleUserId` en el modelo `User`.
+## 6. Integración con Moodle
+
+Sin cambios respecto a TRD v1.0 §6. El cliente `lib/moodle/client.ts` llama a `MOODLE_BASE_URL` desde Server Actions — eso funciona igual en VPS.
+
+**En desarrollo local:** el Moodle Docker de `docker/` sigue siendo el entorno de prueba. La diferencia es que en producción no hay InsForge en medio — la app en el VPS llama directamente a `lms.medicamentum360.com`.
+
+---
 
 ## 7. Integración con Wompi
 
-- Checkout embebe el widget Wompi (iframe con tokenización), sin manejar datos de tarjeta directamente.
-- Webhook `POST /api/webhooks/wompi`:
-  1. Verificar firma HMAC-SHA256 contra `WOMPI_EVENTS_SECRET`.
-  2. Verificar idempotencia: si `wompiTransactionId` ya existe con `status = paid`, ignorar (evitar doble inscripción).
-  3. Actualizar `Order.status`, `Order.paidAt`.
-  4. Disparar inscripción Moodle (`enrol_manual_enrol_users`) por cada `OrderItem` de tipo `course`.
-  5. Para `vr_experience`: generar código de redención (lógica separada, ver backlog VR).
-  6. Disparar email de confirmación vía Brevo.
-- **Backlog:** factura electrónica DIAN automatizada (evaluar proveedor: Siigo, Alegra, o integración directa DIAN).
+Sin cambios respecto a TRD v1.0 §7. El webhook `POST /api/webhooks/wompi` funciona igual.
+
+**Nota importante para VPS:** el webhook de Wompi necesita que el servidor sea públicamente accesible en HTTPS. Con VPS + Nginx + Let's Encrypt, esto se cumple. Asegúrate de que el dominio del webhook registrado en el dashboard de Wompi sea `https://medicamentum360.com/api/webhooks/wompi`.
+
+---
 
 ## 8. Búsqueda (Meilisearch)
 
-- Índice `products`: `title`, `description`, `type`, `priceCents`, `rating`, `categoryTags`.
-- Sincronización: hook post-`create`/`update`/`delete` de `Product` en Prisma → reindexar documento en Meilisearch (síncrono en MVP; cola en fases posteriores si el catálogo crece).
-- Buscador del marketplace consulta Meilisearch directamente (no Postgres) para baja latencia y typo-tolerance.
+Meilisearch corre ahora en Docker en el mismo VPS. La URL de conexión desde la app es `http://meilisearch:7700` (nombre del servicio Docker, red interna).
 
-## 9. Almacenamiento (InsForge Storage)
+```ts
+// lib/meili.ts
+import { MeiliSearch } from 'meilisearch';
 
-- Buckets sugeridos: `avatars/`, `product-covers/`, `certificates/`, `invoices/`, `vr-assets/`.
-- URLs firmadas con expiración corta para `certificates/` e `invoices/` (documentos sensibles); URLs públicas para `product-covers/` y `avatars/`.
+export const meiliClient = new MeiliSearch({
+  host: process.env.MEILI_HOST ?? 'http://meilisearch:7700',
+  apiKey: process.env.MEILI_MASTER_KEY,
+});
+```
+
+**No exponer Meilisearch al exterior.** No mapear el puerto 7700 en Nginx — solo la app interna lo consume.
+
+---
+
+## 9. Storage (Cloudflare R2 — reemplaza InsForge Storage)
+
+```ts
+// lib/storage/client.ts
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
+const s3 = new S3Client({
+  region: "auto",
+  endpoint: process.env.STORAGE_ENDPOINT!, // https://<id>.r2.cloudflarestorage.com
+  credentials: {
+    accessKeyId: process.env.STORAGE_ACCESS_KEY!,
+    secretAccessKey: process.env.STORAGE_SECRET_KEY!,
+  },
+});
+
+const BUCKET = process.env.STORAGE_BUCKET!;
+const PUBLIC_URL = process.env.STORAGE_PUBLIC_URL!; // dominio público del bucket
+
+export async function uploadFile(key: string, body: Buffer, contentType: string) {
+  await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: body, ContentType: contentType }));
+  return `${PUBLIC_URL}/${key}`;
+}
+
+export async function getSignedDownloadUrl(key: string, expiresInSeconds = 3600) {
+  return getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET, Key: key }), {
+    expiresIn: expiresInSeconds,
+  });
+}
+```
+
+**Buckets a crear en R2:** `product-covers`, `avatars`, `certificates`, `invoices`, `vr-assets`.
+URLs públicas para `product-covers` y `avatars`; URLs firmadas con expiración para `certificates` e `invoices`.
+
+---
 
 ## 10. Email transaccional (Brevo)
 
-Eventos mínimos del MVP:
-- Verificación de cuenta (doble opt-in).
-- Recuperación de contraseña.
-- Confirmación de compra (con resumen + acceso).
-- Notificación de inscripción exitosa en curso.
-- Alerta de bloqueo temporal de cuenta (tras N intentos fallidos).
+Sin cambios respecto a TRD v1.0 §10.
 
-## 11. 3D / WebXR (React Three Fiber)
+---
 
-- Preview de experiencias VR en la página de detalle: escena ligera (low-poly o glTF comprimido), carga lazy (`dynamic import`, `ssr: false`).
-- Controles: rotación orbital + zoom, sin requerir hardware VR para el preview web.
-- El contenido VR completo (Meta Quest) se redime fuera de la plataforma web (código de redención / enlace a app de Quest); el visor R3F es solo demostrativo.
+## 11. 3D / WebXR
 
-## 12. Caching
+Sin cambios respecto a TRD v1.0 §11.
 
-- Catálogo de cursos y progreso de Moodle: cacheados en DB propia (tabla espejo) o Redis, con invalidación al recibir webhook de Moodle o en refresh programado (cron cada N minutos).
-- Resultado de Meilisearch: no requiere caché adicional (ya es de baja latencia).
+---
+
+## 12. Caching en VPS
+
+Con Postgres propio y Redis en Docker:
+
+- **Caché de sesiones:** Redis (Better Auth ya lo soporta como store)
+- **Caché ISR de Next.js:** volumen Docker persistente montado en `.next/cache` — entre reinicios del contenedor, la caché se mantiene
+- **Caché de resultados Meilisearch:** no necesaria (latencia < 5ms en red Docker interna)
+- **Caché de datos Moodle:** tabla espejo en Postgres + cron job de sincronización (Fase 6)
+
+---
 
 ## 13. SEO / Rendering
 
-- Landing y marketplace: SSG/ISR donde el catálogo lo permita; revalidación incremental al publicar/editar producto.
-- Detalle de producto: SSR para datos de precio/disponibilidad en tiempo real, con metadata dinámica (`generateMetadata`) para Open Graph/Twitter Card.
-- `/dashboard`, `/configuracion`, `/checkout`: rutas privadas, sin indexar (`robots: noindex`).
+Sin cambios. La configuración de ISR/SSG funciona igual en modo standalone — el disco del VPS es el filesystem del contenedor.
+
+---
 
 ## 14. Observabilidad
 
-- Logging estructurado de Server Actions críticas (pago, inscripción Moodle, creación de usuario espejo).
-- Error tracking recomendado (Sentry o equivalente) — decisión pendiente, no bloqueante para MVP.
-- Analítica de producto: GA4 o Posthog, eventos clave: `add_to_cart`, `begin_checkout`, `purchase`, `course_started`, `course_completed`.
+- **Logs estructurados:** `docker compose logs -f app` en el VPS
+- **Error tracking:** Sentry (free tier, 5k errores/mes) — instalar `@sentry/nextjs`
+- **Uptime monitoring:** UptimeRobot (gratuito) apuntando a `https://medicamentum360.com/api/health`
+- **Analítica:** GA4 o Posthog (igual que antes)
 
-## 15. Variables de entorno (mínimo)
+---
 
-```
-DATABASE_URL=
-BETTER_AUTH_SECRET=
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-WOMPI_PUBLIC_KEY=
-WOMPI_PRIVATE_KEY=
-WOMPI_EVENTS_SECRET=
-MOODLE_BASE_URL=
-MOODLE_WS_TOKEN=
-MEILISEARCH_HOST=
-MEILISEARCH_API_KEY=
-INSFORGE_STORAGE_URL=
-INSFORGE_STORAGE_KEY=
-BREVO_API_KEY=
+## 15. Variables de entorno (referencia completa — VPS)
+
+```env
+# Postgres (Docker en VPS)
+DATABASE_URL=postgresql://medicamentum:<password>@postgres:5432/medicamentum360
+DIRECT_URL=postgresql://medicamentum:<password>@postgres:5432/medicamentum360
+# (En VPS con Docker, DATABASE_URL y DIRECT_URL son la misma — no hay pooler externo)
+
+POSTGRES_USER=medicamentum
+POSTGRES_PASSWORD=<openssl rand -base64 32>
+
+# Better Auth
+BETTER_AUTH_SECRET=<openssl rand -base64 32>
+BETTER_AUTH_URL=https://medicamentum360.com
+
+# Google OAuth
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+
+# Wompi
+WOMPI_PUBLIC_KEY=...
+WOMPI_PRIVATE_KEY=...
+WOMPI_EVENTS_SECRET=...
+
+# Moodle
+MOODLE_BASE_URL=https://lms.medicamentum360.com
+MOODLE_WS_TOKEN=...
+
+# Redis (Docker)
+REDIS_PASSWORD=<openssl rand -base64 32>
+REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+
+# Meilisearch (Docker)
+MEILI_MASTER_KEY=<openssl rand -base64 32>
+MEILI_HOST=http://meilisearch:7700
+
+# Cloudflare R2 (Storage)
+STORAGE_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+STORAGE_ACCESS_KEY=...
+STORAGE_SECRET_KEY=...
+STORAGE_BUCKET=medicamentum360
+STORAGE_PUBLIC_URL=https://storage.medicamentum360.com
+
+# Brevo
+BREVO_API_KEY=...
+
+# Brand
 NEXT_PUBLIC_BRAND_COLOR=#8127cf
 ```
 
+---
+
 ## 16. Requisitos críticos de testing
 
-- **Bloqueante antes de producción:** test de aislamiento RLS cross-org (ver §4).
-- Test de idempotencia del webhook de Wompi (envío duplicado del mismo evento no debe duplicar inscripción ni orden).
-- Test del flujo completo "pago → inscripción Moodle → acceso SSO" en ambiente de staging con cuenta de prueba de Wompi.
-- Test de expiración/un solo uso del token de autologin Moodle.
+Sin cambios respecto a TRD v1.0 §16. Añadir:
+- Test de que el webhook de Wompi es accesible públicamente desde HTTPS en el dominio real
+- Verificar que Nginx no bufferiza las respuestas de RSC streaming (`proxy_buffering off`)
+
+---
 
 ## 17. Entorno local de Moodle para pruebas (Docker)
 
-Para desarrollar y probar la integración Moodle (§6) sin depender de `lms.medicamentum360.com`, existe un entorno Docker auto-provisionado en `docker/` (ver `docker/README.md`):
+Sin cambios respecto a TRD v1.0 §17. `docker/docker-compose.yml` con `jhardison/moodle` (no `bitnami/moodle`, que retiró sus imágenes).
 
-- `docker/docker-compose.yml` — MariaDB + Moodle (`bitnami/moodle:5.2`, auto-instalado por variables de entorno) + un contenedor "job" (`moodle-bootstrap`) de un solo uso.
-- `docker/moodle-bootstrap.php` — habilita Web Services + REST, crea el external service `m360_api` con las funciones de §6, genera un token permanente, crea un curso demo (`M360-DEMO-001`) y un estudiante de prueba ya inscrito. Idempotente.
-- Salida en `docker/output/.env.moodle.local` con `MOODLE_BASE_URL` y `MOODLE_WS_TOKEN` listos para copiar a tu `.env.local`.
+---
 
-Con `docker compose up -d` dentro de `docker/` tienes en 1–3 minutos un Moodle real contra el cual correr los tests de §16 relacionados con la integración (sin tocar producción ni staging).
+## 18. Migraciones de base de datos (flujo actualizado)
+
+Con Postgres propio en VPS, el flujo vuelve al estándar de Prisma:
+
+```bash
+# Desarrollo local
+npx prisma migrate dev --name <descripcion>
+
+# Producción (en CI/CD o manualmente en VPS)
+npx prisma migrate deploy
+
+# Migraciones SQL manuales (si se prefiere)
+docker exec -i medicamentum_postgres psql -U medicamentum -d medicamentum360 < migrations/archivo.sql
+```
+
+**Ya no se usa InsForge CLI para migraciones.** El flujo `npx @insforge/cli db query` queda eliminado.

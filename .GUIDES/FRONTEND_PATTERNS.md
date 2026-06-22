@@ -1,6 +1,6 @@
-# FRONTEND_PATTERNS — Patrones extraídos de open-saas (wasp-lang)
-**Fuente verificada: https://github.com/wasp-lang/open-saas (rama `main`, `template/app/`)**
-Versión: 1.0 · Fecha: 2026-06-19
+# FRONTEND_PATTERNS — Patrones de implementación
+**Fuente: wasp-lang/open-saas (adaptado a Next.js App Router)**
+Versión: 1.1 · Fecha: 2026-06-22 · Actualizado con implementación real
 
 ---
 
@@ -137,33 +137,51 @@ export function cn(...inputs: ClassValue[]) {
 }
 ```
 
-## 3. Barra de navegación — patrón real, adaptado a Next.js
+## 3. Barra de navegación — implementación actual
 
-Fuente: `template/app/src/client/components/NavBar/NavBar.tsx`. El comportamiento que pediste (full-width → píldora centrada con blur al hacer scroll) está implementado así en el original:
+**Archivo:** `components/layout/NavBar.tsx`. Envuelto en `memo()` para evitar re-renders.
 
 ```tsx
-// Lógica de scroll (original, framework-agnóstico)
+// Lógica de scroll (implementación real)
 const [isScrolled, setIsScrolled] = useState(false);
+const [isHidden, setIsHidden] = useState(false);
+const prevScrollY = useRef(0);
 
 useEffect(() => {
   const throttled = throttleWithTrailingInvocation(() => {
-    setIsScrolled(window.scrollY > 0);
+    const currentY = window.scrollY;
+    setIsScrolled(currentY > 0);
+    // Scroll direction tracking (marketplace only)
+    if (isMarketplace) {
+      setIsHidden(currentY > prevScrollY.current && currentY > 80);
+    }
+    prevScrollY.current = currentY;
   }, 50);
   window.addEventListener("scroll", throttled);
   return () => {
     window.removeEventListener("scroll", throttled);
     throttled.cancel();
   };
-}, []);
+}, [isMarketplace]);
 
-// Clases condicionales (original)
-className={cn("transition-all duration-300", {
-  "bg-background/90 border-border mx-4 rounded-full border pr-2 shadow-lg backdrop-blur-lg md:mx-20 lg:pr-0": isScrolled,
-  "bg-background/80 border-border mx-0 border-b backdrop-blur-lg": !isScrolled,
-})}
+// Clases — propiedades específicas, nunca transition-all
+<header className={cn(
+  "sticky top-0 z-50 transition-transform duration-300",
+  isScrolled && "top-4",
+  isHidden && "-translate-y-full"
+)}>
+  <div className={cn("transition-[background-color,border-color,box-shadow] duration-300", {
+    "bg-background/90 border-border mx-4 rounded-full border pr-2 shadow-lg backdrop-blur-lg md:mx-20 lg:pr-0": isScrolled,
+    "bg-background/80 border-border mx-0 border-b backdrop-blur-lg": !isScrolled,
+  })}>
 ```
 
-Esto es exactamente el patrón que pediste en UX_UI.md §2 (sticky, blur, mx-4 + rounded-full al hacer scroll, sombra suave). La función de throttle con "trailing invocation" (ejecuta inmediato la primera vez, y garantiza una última ejecución al final del scroll) viene de `template/app/src/shared/utils.ts` — cópiala igual, es una utilidad genérica de 35 líneas sin dependencias.
+**Diferencias vs. el patrón original de open-saas:**
+- `transition-all` → propiedades específicas (`transition-transform`, `transition-[background-color,...]`)
+- `memo()` envuelve el componente para evitar re-renders
+- Scroll direction tracking para marketplace (ocultar al bajar, mostrar al subir)
+- Logo con `window.scrollTo({ top: 0, behavior: 'smooth' })`
+- Search bar en marketplace: `w-[180px]` → `max-w-none` on `group-focus-within`
 
 ### Versión adaptada a Next.js App Router
 
@@ -372,21 +390,27 @@ function NavLogo({ isScrolled }: { isScrolled: boolean }) {
 - El original consulta `useAuth()` de Wasp; en tu stack eso lo resuelve Better Auth (server-side via Server Component padre que pasa `user` como prop, o un hook cliente si lo prefieres).
 - El comportamiento de **ocultar/mostrar al hacer scroll en el marketplace** (`/productos`, UX_UI.md §3.3) **no está en el NavBar original** de open-saas (su navbar solo cambia de forma, no se oculta) — eso es un requisito propio de tu PRD que debes añadir como una variante: un segundo `useEffect` que compare `window.scrollY` contra el valor anterior y aplique `translate-y-[-100%]`/`translate-y-0` con la misma `cn()` + `transition-all`.
 
-## 4. Selector de modo oscuro/claro
+## 4. Selector de modo oscuro/claro — implementación actual
 
-Fuente: `template/app/src/client/components/DarkModeSwitcher.tsx` + `useColorMode.ts`. Patrón: toggle tipo "switch" (no un botón con ícono que cambia), basado en checkbox oculto + `<span>` deslizante, persistido en `localStorage`.
+**Archivos:** `hooks/useColorMode.ts` + `components/layout/DarkModeSwitcher.tsx` + script inline en `app/layout.tsx`.
 
 ```tsx
-// hooks/useColorMode.ts (adaptado, sin la dependencia interna de wasp)
+// hooks/useColorMode.ts (implementación real)
 "use client";
 import { useEffect, useState } from "react";
 
 export function useColorMode() {
   const [colorMode, setColorModeState] = useState<"light" | "dark">("light");
 
+  // Read from localStorage only after mount (avoids hydration mismatch)
   useEffect(() => {
     const stored = localStorage.getItem("color-theme");
-    if (stored === "dark" || stored === "light") setColorModeState(stored);
+    if (stored === "dark") {
+      setColorModeState("dark");
+    } else if (!stored) {
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      if (prefersDark) setColorModeState("dark");
+    }
   }, []);
 
   useEffect(() => {
@@ -402,7 +426,10 @@ export function useColorMode() {
 }
 ```
 
-> Nota de integración con tu PRD: en `/configuracion` pediste que el modo (claro/oscuro/sistema) sea una preferencia de cuenta. Patrón recomendado: este hook sigue gobernando la clase `dark` en `<html>` (fuente de verdad visual e instantánea, sin esperar a la red); al guardar la preferencia en `/configuracion`, además de `localStorage` persistes el valor en `User.theme` (ya está en tu `schema.prisma`, TRD.md §3) para que sincronice entre dispositivos la próxima vez que el usuario inicie sesión.
+**Fix de hidratación (3 partes):**
+1. Script inline en `<head>` de `layout.tsx`: lee `localStorage` y aplica `dark` antes de hidratación.
+2. `useColorMode`: inicializa con `'light'`, sincroniza desde `localStorage` en `useEffect`.
+3. `DarkModeSwitcher`: renderiza placeholder hasta `mounted=true`.
 
 ## 5. Banner de consentimiento de cookies (Ley 1581 / Habeas Data)
 
@@ -536,7 +563,7 @@ const navigationItems = [
 
 **Comportamiento scroll:**
 - Landing: full-width → píldora centrada con blur al hacer scroll.
-- Marketplace: se oculta al bajar y reaparece al subi (scroll direction tracking).
+- Marketplace: se oculta al bajar y reaparece al subir (scroll direction tracking).
 - Logo: `window.scrollTo({ top: 0, behavior: 'smooth' })` al hacer click.
 - `memo()` envuelve NavBar para evitar re-renders innecesarios.
 
@@ -645,11 +672,8 @@ Usado para animaciones complejas de scroll que CSS no puede lograr (parallax, st
 1. **Script inline en `<head>`** (`app/layout.tsx`): lee `localStorage` y aplica clase `dark` antes de hidratación.
 2. **`useColorMode`:** `getInitialMode()` lee `localStorage` + `prefers-color-scheme` (no inicializa con valor hardcodeado).
 3. **`DarkModeSwitcher`:** renderiza placeholder hasta `mounted=true`, luego ícono correcto.
-- **`clip-path`** es animable y GPU-accelerado. Útil para reveals, overlays de hold-to-delete, pestañas.
-- **WAAPI** para animaciones programáticas con rendimiento CSS.
-- **Framer Motion shorthands** (`x`, `y`, `scale`) NO son hardware-accelerated. Usar `transform: "translateX()"`.
 
-### 9.5 Accesibilidad
+### 9.8 Accesibilidad
 
 ```css
 @media (prefers-reduced-motion: reduce) {
@@ -661,30 +685,20 @@ Usado para animaciones complejas de scroll que CSS no puede lograr (parallax, st
 }
 ```
 
-### 9.6 Asymmetric timing
+### 9.9 Asymmetric timing
 
 Donde el usuario decide → lento (hold-to-delete: 2s). Donde el sistema responde → rápido (release: 200ms).
 
-### 9.7 Verify checklist
+### 9.10 Verify checklist
 
 | Issue | Fix |
 |---|---|
 | `transition: all` | Especificar propiedades exactas |
 | `scale(0)` entry | `scale(0.95)` + `opacity: 0` |
 | `ease-in` en UI | `ease-out` o custom curve |
-| `transform-origin: center` en popover | Origin desde trigger (Radix: `var(--radix-popover-content-transform-origin)`) |
+| `transform-origin: center` en popover | Origin desde trigger |
 | Animación en keyboard action | Remover completamente |
 | Duration > 300ms en UI | Reducir a 150-250ms |
 | Hover sin media query | `@media (hover: hover) and (pointer: fine)` |
 | Keyframes en elementos rápidos | CSS transitions |
 | Misma velocidad enter/exit | Exit más rápido que enter |
-
-### 9.8 CSS variables globales (agregar a globals.css)
-
-```css
-:root {
-  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
-  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-}
-```
