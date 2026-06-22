@@ -1,6 +1,20 @@
 # PROGRESS — Medicamentum360
 **Estado actual del plan de desarrollo**
-Actualizado: 2026-06-22
+Actualizado: 2026-06-22 (última sesión)
+
+---
+
+## Resumen ejecutivo
+
+| Fase | Estado |
+|---|---|
+| Fase 1 — Fundaciones | ✅ COMPLETA |
+| Fase 2 — Landing + Auth | ✅ COMPLETA |
+| Fase 2.5 — CI/CD | ~EN PROGRESO (falta Vercel-InsForge) |
+| Fase 3 — Marketplace | ✅ COMPLETA |
+| Fase 4-13 | ⬜ No iniciadas |
+
+**Commits de esta sesión:** `26ec8e3` → `033db32` (16 commits)
 
 ---
 
@@ -282,3 +296,44 @@ Actualizado: 2026-06-22
 - **Migración SQL:** `migrations/20260622100000_add-plans-and-invitations.sql` — crea `plans`, `organization_invitations`, agrega `org_code` a `organizations`, RLS policies para ambas tablas (SELECT público para planes activos, CRUD para hospital_admin/super_admin en invitations).
 - **TypeScript:** `tsc --noEmit` exit 0, `prisma generate` exit 0 (v7.8.0).
 - **PLAN.md:** Fase 2 marcada como COMPLETA, Fase 2.5 actualizada con nota de migración.
+
+### Hallazgo #17 — Animaciones Emil Kowalski + GSAP ScrollTrigger ✅
+- **Duraciones corregidas:** ScrollReveal 600ms→400ms, page-enter 400ms→300ms, reveal-up 600ms→350ms
+- **NavBar:** `transition-all` eliminado, propiedades específicas (`transition-transform`, `transition-[padding]`)
+- **Mobile menu:** keyframes→CSS transitions (interruptibles, retargets al cerrar)
+- **PageTransition:** exit 150ms + enter 250ms (sin blur, solo opacity + translateY)
+- **GSAP LandingAnimations:** Hero parallax, Nosotros icons pop, Ejemplos fan-out desde Nosotros, Blog slide desde Ejemplos
+- **Logo:** scroll suave al tope con `window.scrollTo({ top: 0, behavior: 'smooth' })`
+
+### Hallazgo #18 — Dark mode flash fix + hidratación ✅
+- **Problema:** `useColorMode` inicializaba en 'light' en servidor, 'dark' en cliente → flash
+- **Fix:** `getInitialMode()` sincronizado desde localStorage, script inline en `<head>` aplica `dark` antes de hidratación
+- **DarkModeSwitcher:** muestra `<div>` vacío hasta `mounted=true`, luego ícono correcto
+- **NavBar:** envuelto en `memo()` para evitar re-renders innecesarios
+
+### Hallazgo #19 — Navbar "Entrar" parpadeo fix ✅
+- **Problema:** `isPending` de `authClient.useSession()` mostraba skeleton circle antes de "Entrar"
+- **Fix:** eliminado check `isPending` del navbar, siempre muestra "Entrar" cuando no hay sesión
+- **Resultado:** sin círculo parpadeante al navegar entre páginas
+
+### Hallazgo #20 — Search bar marketplace en NavBar ✅
+- **Spec:** UX_UI.md §3.1 — barra de búsqueda solo visible en `/productos`
+- **Implementación:** `w-[180px]` default, `max-w-none` on `group-focus-within` (expande a todo el espacio)
+- **Transición:** 300ms ease-out, placeholder transparente hasta focus
+- **CSS-only:** usa `group` + `focus-within` sin JavaScript adicional
+
+### Hallazgo #21 — Fase 3 Marketplace completo ✅
+- **Server Actions:** `getProducts`, `getProductBySlug`, `getRelatedProducts` (Prisma)
+- **Infinite scroll:** IntersectionObserver con `rootMargin: 200px`, skeleton loading
+- **Meilisearch:** `lib/meili.ts` con fallback a DB si no disponible
+- **R3F 3D viewer:** React Three Fiber + Drei, OrbitControls, Float, autoRotate, partículas
+- **Seed script:** 9 productos de ejemplo (cursos, VR, IA) en `prisma/seed.ts`
+- **Filtros:** tabs categoría + sort dropdown custom (sin select nativo)
+- **SSL warning:** `sslmode=require` → `verify-full` en runtime via `prisma.ts`
+
+### Hallazgo #22 — Fase 2.5 CI/CD configurado ✅
+- **Vitest:** jsdom, jest-dom setup, 2 unit tests pasando
+- **GitHub Actions:** 4 workflows (ci, e2e, accessibility, rls-test)
+- **Playwright:** chromium, E2E tests de landing + auth + checkout
+- **axe-core:** WCAG 2.1 AA en 4 páginas
+- **vercel.json:** build con `prisma generate` para serverless
