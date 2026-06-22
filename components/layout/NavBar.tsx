@@ -49,7 +49,7 @@ export const NavBar = memo(function NavBar({ navigationItems }: NavBarProps) {
   const pathname = usePathname();
   const isLanding = pathname === '/';
   const isMarketplace = pathname.startsWith('/productos');
-  const { data: session, isPending } = authClient.useSession();
+  const { data: session } = authClient.useSession();
 
   const userRole = (session?.user as any)?.role;
   const isHospitalAdmin = userRole === 'hospital_admin' || userRole === 'super_admin';
@@ -194,9 +194,7 @@ export const NavBar = memo(function NavBar({ navigationItems }: NavBarProps) {
           <div className="hidden lg:flex items-center gap-3">
             <DarkModeSwitcher />
 
-            {isPending ? (
-              <div className="size-8 rounded-full bg-muted animate-pulse" />
-            ) : session?.user ? (
+            {session?.user ? (
               <div ref={dropdownRef} className="relative">
                 <button
                   onClick={() => setDropdownOpen(!dropdownOpen)}
@@ -319,12 +317,7 @@ export const NavBar = memo(function NavBar({ navigationItems }: NavBarProps) {
                     ))}
                   </ul>
                   <div className="py-4 border-t space-y-1">
-                    {isPending ? (
-                      <div className="px-3 py-2 space-y-2">
-                        <div className="h-9 w-full rounded-md bg-muted animate-pulse" />
-                        <div className="h-4 w-32 mx-auto rounded bg-muted animate-pulse" />
-                      </div>
-                    ) : session?.user ? (
+                    {session?.user ? (
                       <>
                         <div className="px-3 py-2">
                           <p className="text-sm font-medium">{session.user.name}</p>
