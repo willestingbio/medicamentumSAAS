@@ -40,10 +40,10 @@ export function ScrollReveal({
   }, []);
 
   const directionStyles = {
-    up: 'translate-y-5',
-    down: '-translate-y-5',
-    left: 'translate-x-5',
-    right: '-translate-x-5',
+    up: 'translate-y-4',
+    down: '-translate-y-4',
+    left: 'translate-x-4',
+    right: '-translate-x-4',
     none: '',
   };
 
@@ -51,7 +51,7 @@ export function ScrollReveal({
     <div
       ref={ref}
       className={cn(
-        'transition-all duration-600 ease-out',
+        'transition-all duration-400 ease-out',
         isVisible
           ? 'opacity-100 translate-x-0 translate-y-0'
           : `opacity-0 ${directionStyles[direction]}`,

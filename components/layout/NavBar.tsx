@@ -158,17 +158,17 @@ export function NavBar({ navigationItems }: NavBarProps) {
 
   return (
     <header className={cn(
-      "sticky top-0 z-50 transition-all duration-300",
+      "sticky top-0 z-50 transition-transform duration-300",
       isScrolled && "top-4",
       isHidden && "-translate-y-full"
     )}>
       <div className={cn(
-        "transition-all duration-300",
+        "transition-[background-color,border-radius,box-shadow,border,margin,padding] duration-300",
         isScrolled
           ? "bg-background/90 border rounded-full shadow-lg backdrop-blur-lg mx-4 md:mx-20"
           : "bg-background/80 border-b backdrop-blur-lg"
       )}>
-        <nav className={cn("flex items-center justify-between transition-all duration-300",
+        <nav className={cn("flex items-center justify-between transition-[padding] duration-300",
           isScrolled ? "p-3 lg:px-6" : "p-6 lg:px-8"
         )} aria-label="Global">
 
@@ -289,8 +289,12 @@ export function NavBar({ navigationItems }: NavBarProps) {
                     {visibleItems.map((item, i) => (
                       <li
                         key={item.name}
-                        style={{ animationDelay: `${i * 50}ms` }}
-                        className="opacity-0 animate-[slide-in-right_300ms_ease-out_forwards]"
+                        className="transition-all duration-300 ease-out"
+                        style={{
+                          transitionDelay: `${i * 50}ms`,
+                          opacity: mobileOpen ? 1 : 0,
+                          transform: mobileOpen ? 'translateX(0)' : 'translateX(16px)',
+                        }}
                       >
                         <a
                           href={item.sectionId && isLanding ? `#${item.sectionId}` : item.href}

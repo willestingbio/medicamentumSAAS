@@ -100,11 +100,11 @@
     animation: gradient-shift 8s var(--ease-in-out) infinite;
   }
 
-  /* Scroll reveal — fade in + slide up */
+  /* Scroll reveal — fade in + slide up (400ms, under 300ms budget for feel) */
   @keyframes reveal-up {
     from {
       opacity: 0;
-      transform: translateY(20px);
+      transform: translateY(16px);
     }
     to {
       opacity: 1;
@@ -113,7 +113,7 @@
   }
   .animate-reveal-up {
     opacity: 0;
-    animation: reveal-up 600ms var(--ease-out) forwards;
+    animation: reveal-up 350ms var(--ease-out) forwards;
   }
 
   /* Scroll reveal — fade in */
@@ -123,22 +123,22 @@
   }
   .animate-fade-in {
     opacity: 0;
-    animation: fade-in 500ms var(--ease-out) forwards;
+    animation: fade-in 300ms var(--ease-out) forwards;
   }
 
-  /* Stagger children — each child delays */
+  /* Stagger children — 30-80ms between items, 350ms duration */
   .stagger-children > * {
     opacity: 0;
-    animation: reveal-up 500ms var(--ease-out) forwards;
+    animation: reveal-up 350ms var(--ease-out) forwards;
   }
   .stagger-children > *:nth-child(1) { animation-delay: 0ms; }
-  .stagger-children > *:nth-child(2) { animation-delay: 60ms; }
-  .stagger-children > *:nth-child(3) { animation-delay: 120ms; }
-  .stagger-children > *:nth-child(4) { animation-delay: 180ms; }
-  .stagger-children > *:nth-child(5) { animation-delay: 240ms; }
-  .stagger-children > *:nth-child(6) { animation-delay: 300ms; }
+  .stagger-children > *:nth-child(2) { animation-delay: 50ms; }
+  .stagger-children > *:nth-child(3) { animation-delay: 100ms; }
+  .stagger-children > *:nth-child(4) { animation-delay: 150ms; }
+  .stagger-children > *:nth-child(5) { animation-delay: 200ms; }
+  .stagger-children > *:nth-child(6) { animation-delay: 250ms; }
 
-  /* Dropdown enter — scale from trigger */
+  /* Dropdown enter — scale from trigger (150ms, origin-aware) */
   @keyframes dropdown-in {
     from {
       opacity: 0;
@@ -150,23 +150,11 @@
     }
   }
 
-  /* Sheet slide in from right */
-  @keyframes slide-in-right {
-    from {
-      opacity: 0;
-      transform: translateX(16px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
-  }
-
-  /* Page transition — content enter */
+  /* Page transition — content enter (300ms, fast) */
   @keyframes page-enter {
     from {
       opacity: 0;
-      transform: translateY(8px);
+      transform: translateY(6px);
     }
     to {
       opacity: 1;
@@ -174,7 +162,7 @@
     }
   }
   .page-enter {
-    animation: page-enter 400ms var(--ease-out) forwards;
+    animation: page-enter 300ms var(--ease-out) forwards;
   }
 
   /* Scale in for modals/toasts */
@@ -189,7 +177,55 @@
     }
   }
   .animate-scale-in {
-    animation: scale-in 200ms var(--ease-out) forwards;
+    animation: scale-in 180ms var(--ease-out) forwards;
+  }
+
+  /* Section exit — fade out + slide down (for when Ejemplos/Blog disappear) */
+  @keyframes section-exit {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+  }
+
+  /* Section enter — fade in + slide up from origin (for when Ejemplos/Blog appear) */
+  @keyframes section-enter {
+    from {
+      opacity: 0;
+      transform: translateY(-12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Slide in from left (for content transitions) */
+  @keyframes slide-in-left {
+    from {
+      opacity: 0;
+      transform: translateX(-16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  /* Slide in from right (for mobile menu items) */
+  @keyframes slide-in-right {
+    from {
+      opacity: 0;
+      transform: translateX(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
   }
 
   /* Button press feedback */
@@ -211,6 +247,26 @@
     }
   }
 
+  /* Nav link underline animation */
+  .nav-link-underline {
+    position: relative;
+  }
+  .nav-link-underline::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 0;
+    height: 2px;
+    background: hsl(var(--primary));
+    transition: width 250ms var(--ease-out);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .nav-link-underline:hover::after {
+      width: 100%;
+    }
+  }
+
   /* ===== Reduced Motion ===== */
   @media (prefers-reduced-motion: reduce) {
     *,
@@ -220,13 +276,6 @@
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
-    }
-  }
-
-  /* ===== Hover only on fine pointer devices ===== */
-  @media (hover: hover) and (pointer: fine) {
-    .hoverable:hover {
-      /* Hover animations solo para dispositivos con hover real */
     }
   }
 }
