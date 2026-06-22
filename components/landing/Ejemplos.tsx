@@ -1,6 +1,5 @@
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
 import { Video, Brain, Stethoscope, ArrowRight } from 'lucide-react';
-import { ScrollReveal } from '@/components/ScrollReveal';
 
 const examples = [
   {
@@ -27,21 +26,19 @@ export function Ejemplos() {
   return (
     <section className="py-24">
       <div className="container mx-auto px-4">
-        <ScrollReveal>
-          <div className="text-center mb-16">
-            <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
-              Ejemplos de contenido
-            </h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Cada curso está diseñado con metodología evidence-based y casos clínicos reales
-              adaptados al contexto latinoamericano.
-            </p>
-          </div>
-        </ScrollReveal>
+        <div className="text-center mb-16" data-anim="ejemplos-title">
+          <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
+            Ejemplos de contenido
+          </h2>
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+            Cada curso está diseñado con metodología evidence-based y casos clínicos reales
+            adaptados al contexto latinoamericano.
+          </p>
+        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-          {examples.map(({ icon: Icon, title, desc, tag }, i) => (
-            <ScrollReveal key={title} delay={i * 100}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto" style={{ perspective: '1000px' }}>
+          {examples.map(({ icon: Icon, title, desc, tag }) => (
+            <div key={title} data-anim="ejemplo-card">
               <Card className="group card-hover">
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between mb-4">
@@ -59,7 +56,7 @@ export function Ejemplos() {
                   </a>
                 </CardContent>
               </Card>
-            </ScrollReveal>
+            </div>
           ))}
         </div>
       </div>

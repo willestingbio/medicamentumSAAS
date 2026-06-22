@@ -173,7 +173,19 @@ export function NavBar({ navigationItems }: NavBarProps) {
         )} aria-label="Global">
 
           {/* Logo */}
-          <a href="/" className="flex items-center gap-2 hover:text-primary transition-colors duration-200 ease-out group">
+          <a
+            href="/"
+            onClick={(e) => {
+              e.preventDefault();
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+              // If not on landing page, navigate first then scroll
+              if (window.location.pathname !== '/') {
+                window.location.href = '/#';
+                setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
+              }
+            }}
+            className="flex items-center gap-2 hover:text-primary transition-colors duration-200 ease-out group"
+          >
             <div className="size-8 rounded-lg bg-primary flex items-center justify-center group-hover:scale-105 transition-transform duration-200 ease-out">
               <span className="text-primary-foreground font-bold text-sm">M3</span>
             </div>

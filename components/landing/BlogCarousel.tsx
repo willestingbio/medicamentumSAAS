@@ -96,7 +96,7 @@ export function BlogCarousel() {
     >
       <div className="container mx-auto px-4">
         <div className="flex items-end justify-between mb-8">
-          <div>
+          <div data-anim="blog-title">
             <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-2">Blog</h2>
             <p className="text-muted-foreground">Artículos, guías y casos de estudio.</p>
           </div>
@@ -120,10 +120,10 @@ export function BlogCarousel() {
           </div>
         </div>
 
-        <div className="overflow-hidden" ref={emblaRef}>
+        <div className="overflow-hidden" ref={emblaRef} style={{ perspective: '1000px' }}>
           <div className="flex gap-6">
             {posts.map(({ title, excerpt, date, tag }) => (
-              <div key={title} className="min-w-[280px] max-w-[320px] flex-shrink-0">
+              <div key={title} className="min-w-[280px] max-w-[320px] flex-shrink-0" data-anim="blog-card">
                 <article className="h-full">
                   <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer group">
                     <CardContent className="p-6 flex flex-col h-full">
