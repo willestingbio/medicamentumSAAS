@@ -1,15 +1,19 @@
 'use client';
 import { useEffect, useState } from 'react';
 
-function getInitialMode(): 'light' | 'dark' {
-  if (typeof window === 'undefined') return 'light';
-  const stored = localStorage.getItem('color-theme');
-  if (stored === 'dark' || stored === 'light') return stored;
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
 export function useColorMode() {
-  const [colorMode, setColorModeState] = useState<'light' | 'dark'>(getInitialMode);
+  const [colorMode, setColorModeState] = useState<'light' | 'dark'>('light');
+
+  // Read from localStorage only after mount (avoids hydration mismatch)
+  useEffect(() => {
+    const stored = localStorage.getItem('color-theme');
+    if (stored === 'dark') {
+      setColorModeState('dark');
+    } else if (!stored) {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (prefersDark) setColorModeState('dark');
+    }
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', colorMode === 'dark');
