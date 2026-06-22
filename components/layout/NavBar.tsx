@@ -190,11 +190,11 @@ export const NavBar = memo(function NavBar({ navigationItems }: NavBarProps) {
             {visibleItems.map(renderNavLink)}
           </ul>
 
-          {/* Search bar — only on marketplace */}
+          {/* Search bar — only on marketplace, expands on hover */}
           {isMarketplace && (
-            <div className="hidden lg:flex items-center flex-1 max-w-xs mx-4">
-              <div className="relative w-full">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+            <div className="hidden lg:flex items-center mx-4 group/search">
+              <div className="relative flex items-center">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
                 <input
                   type="text"
                   placeholder="Buscar..."
@@ -211,7 +211,7 @@ export const NavBar = memo(function NavBar({ navigationItems }: NavBarProps) {
                       router.push(`/productos?${params.toString()}`);
                     }
                   }}
-                  className="w-full pl-9 pr-3 py-1.5 rounded-full border bg-background/50 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:bg-background transition-all"
+                  className="w-10 group-focus-within/search:w-64 pl-9 pr-3 py-1.5 rounded-full border bg-background/50 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:bg-background transition-all duration-300 ease-out placeholder-transparent focus:placeholder:text-muted-foreground"
                 />
               </div>
             </div>
