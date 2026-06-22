@@ -515,12 +515,12 @@ El NavBar muestra diferentes elementos según el estado de autenticación y el r
 ```tsx
 // Patrón de items condicionales
 const navigationItems = [
-  { name: 'Nosotros', href: '/#nosotros', show: 'always' },
-  { name: 'Ejemplos', href: '/#ejemplos', show: 'always' },
-  { name: 'Blog', href: '/#blog', show: 'always' },
-  { name: 'Productos', href: '/productos', show: 'always' },
-  { name: 'Mi Aprendizaje', href: '/dashboard', show: 'authenticated' },
-  { name: 'Empleados', href: '/org/employees', show: 'hospital_admin' },
+  { name: 'Nosotros', href: '/#nosotros', showOn: 'always' },
+  { name: 'Ejemplos', href: '/#ejemplos', showOn: 'always' },
+  { name: 'Blog', href: '/#blog', showOn: 'always' },
+  { name: 'Productos', href: '/productos', showOn: 'always' },
+  { name: 'Mi Aprendizaje', href: '/dashboard', showOn: 'authenticated' },
+  { name: 'Empleados', href: '/org/employees', showOn: 'hospital_admin' },
 ];
 ```
 
@@ -532,7 +532,15 @@ const navigationItems = [
 | Autenticado (hospital_admin) | Logo, Mi Aprendizaje, Marketplace, Empleados, [Tema], [Avatar ▾] |
 | Autenticado (super_admin) | Logo, Mi Aprendizaje, Marketplace, Empleados, Admin, [Tema], [Avatar ▾] |
 
-**En `/productos`** (marketplace), el NavBar además se oculta al hacer scroll down y reaparece al subir (scroll direction tracking).
+**En `/productos`** (marketplace):搜索 bar visible en NavBar (`w-[180px]`, expande a `max-w-none` on `group-focus-within`, transición 300ms). Se sincroniza con `?search=` query param.
+
+**Comportamiento scroll:**
+- Landing: full-width → píldora centrada con blur al hacer scroll.
+- Marketplace: se oculta al bajar y reaparece al subi (scroll direction tracking).
+- Logo: `window.scrollTo({ top: 0, behavior: 'smooth' })` al hacer click.
+- `memo()` envuelve NavBar para evitar re-renders innecesarios.
+
+**Transiciones:** propiedades específicas (`transition-transform duration-300`, `transition-[padding]`) — no `transition-all`.
 
 ### 8.3 Server Actions con RBAC
 
@@ -561,42 +569,82 @@ export async function createInvitation(email: string) {
 
 ---
 
-## 9. Animaciones — Patrones de Emil Kowalski (Design Engineering)
+## 9. Animaciones — Implementación actual
 
-### 9.1 Easing custom (sobrescribir los built-in de CSS)
-
-Los easings built-in de CSS son débiles. Usar estos custom curves:
+### 9.1 Easing custom (globals.css)
 
 ```css
---ease-out: cubic-bezier(0.23, 1, 0.32, 1);
---ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
---ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+@theme inline {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
 ```
 
 **Regla: nunca `ease-in` en UI.** Comienza lento, retrasando el momento que el usuario más observa.
 
-### 9.2 Decision framework (preguntar antes de animar)
+### 9.2 Decision framework
 
 1. **¿Debería animar esto?** Frecuencia: 100+/día → NO. Decenas/día → reducir. Ocasional → estándar. Raro → delight.
 2. **¿Cuál es el propósito?** Consistencia espacial, indicación de estado, feedback, explicación, evitar cambio brusco.
 3. **¿Qué easing?** Entrando/saliendo → `ease-out`. Moviéndose en pantalla → `ease-in-out`. Hover → `ease`. Constante → `linear`.
 4. **¿Qué duración?** Botón 100-160ms. Tooltip 125-200ms. Dropdown 150-250ms. Modal/drawer 200-500ms. **Máximo 300ms para UI.**
 
-### 9.3 Patrones de componentes
+### 9.3 Animaciones CSS (globals.css)
+
+| Keyframe | Duración | Easing | Uso |
+|---|---|---|---|
+| `reveal-up` | 350ms | `--ease-out` | ScrollReveal, landing sections |
+| `fade-in` | 300ms | `--ease-out` | Elementos que aparecen |
+| `page-enter` | 300ms | `--ease-out` | PageTransition enter |
+| `scale-in` | 180ms | `--ease-out` | Modals, toasts |
+| `gradient-shift` | 8s | `--ease-in-out` | Hero background |
+| `dropdown-in` | 150ms | ease-out | Dropdowns/popovers |
+| `slide-in-left/right` | — | — | Content transitions |
+
+**PageTransition:** exit 150ms `opacity-0 translate-y-1` → enter 250ms `opacity-100 translate-y-0`. Easing: `cubic-bezier(0.23, 1, 0.32, 1)`.
+
+### 9.4 GSAP ScrollTrigger (Landing)
+
+Usado para animaciones complejas de scroll que CSS no puede lograr (parallax, stagger con dirección, scrub).
+
+**Componente:** `components/landing/LandingAnimations.tsx` — `useEffect` único, `gsap.context()`, `once: true` en todos los triggers.
+
+| Elemento | Animación | Trigger | Detalle |
+|---|---|---|---|
+| Hero content | `y: -30`, `opacity: 0.7` | scrub: 1s, `start: 'top top'` | Parallax suave al hacer scroll |
+| Nosotros icons | `scale 0→1`, `rotation -10→0` | `start: 'top 88%'` | `back.out(1.5)`, stagger 80ms |
+| Ejemplos title | `opacity 0→1`, `y: 30→0` | `start: 'top 88%'` | 500ms, `power2.out` |
+| Ejemplos cards | `opacity 0→1`, `y: 50→0`, `scale 0.96→1` | `start: 'top 80%'` | 550ms, stagger 100ms |
+| Blog title | `opacity 0→1`, `y: 30→0` | `start: 'top 88%'` | 500ms, `power2.out` |
+| Blog cards | `opacity 0→1`, `y: 40→0`, `scale 0.97→1` | `start: 'top 80%'` | 500ms, stagger 80ms |
+
+**data-anim attributes:** `hero-content`, `nosotros-icon`, `ejemplos-title`, `ejemplo-card`, `blog-title`, `blog-card`.
+
+### 9.5 Patrones de componentes (ShadCN)
 
 | Elemento | Animación | Detalle |
 |---|---|---|
-| Botón (`:active`) | `scale(0.97)` + `transition 160ms ease-out` | Feedback táctil inmediato |
-| Dropdown/popover | `scale(0.95)` + `opacity: 0` → `scale(1)` + `opacity: 1`, 150-250ms ease-out | `transform-origin` desde el trigger (no center) |
-| Tooltip | 125-200ms ease-out, origin-aware, skip delay en hovers siguientes | Usar `data-instant` |
-| Modal | Centrado, `transform-origin: center`, 200-500ms | Excepción: modales NO cambian origin |
-| Drawer | `translateY(100%)` con `ease-out` 400ms o spring | Usar `--ease-drawer` para iOS-like |
-| Stagger (grupos) | 30-80ms entre items, `translateY(8px)` + `opacity`, 300ms ease-out | No bloquear interacción |
+| Botón (`:active`) | `scale(0.97)` + `transition 160ms ease-out` | `.btn-press` |
+| Card hover | `translateY(-2px)` + shadow | `.card-hover`, `@media (hover)` |
+| Nav link underline | `width 0→100%` | `.nav-link-underline::after`, 250ms |
+| Dropdown/popover | `scale(0.95)` + `opacity: 0` → `scale(1)` + `opacity: 1` | 150-250ms, origin-aware |
 
-### 9.4 Reglas de performance
+### 9.6 Reglas de performance
 
 - **Solo animar `transform` y `opacity`** — corren en GPU. `width`/`height`/`margin`/`padding`/`top`/`left` NO.
 - **CSS transitions > keyframes** para UI dinámica (interrumpibles). Keyframes reinician desde cero.
+- **GSAP solo para landing** — no usar en UI interactiva (dashboard, marketplace). CSS basta.
+- **prefers-reduced-motion:** `animation-duration: 0.01ms !important` en CSS global. GSAP no lo respeta por defecto — si se necesita, verificar `window.matchMedia('(prefers-reduced-motion: reduce)')` antes de registrar ScrollTriggers.
+
+### 9.7 Dark mode — fix de hidratación
+
+**Problema:** `useColorMode` inicializaba `'light'` en servidor, `'dark'` en cliente → flash al cargar.
+
+**Solución (3 partes):**
+1. **Script inline en `<head>`** (`app/layout.tsx`): lee `localStorage` y aplica clase `dark` antes de hidratación.
+2. **`useColorMode`:** `getInitialMode()` lee `localStorage` + `prefers-color-scheme` (no inicializa con valor hardcodeado).
+3. **`DarkModeSwitcher`:** renderiza placeholder hasta `mounted=true`, luego ícono correcto.
 - **`clip-path`** es animable y GPU-accelerado. Útil para reveals, overlays de hold-to-delete, pestañas.
 - **WAAPI** para animaciones programáticas con rendimiento CSS.
 - **Framer Motion shorthands** (`x`, `y`, `scale`) NO son hardware-accelerated. Usar `transform: "translateX()"`.

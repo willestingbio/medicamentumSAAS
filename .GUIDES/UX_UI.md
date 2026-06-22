@@ -14,7 +14,7 @@ Versión: 1.0 · Fecha: 2026-06-19
 | Modo | Claro / Oscuro, toggle persistido en `localStorage`, sincronizado con `/configuracion` |
 | Tipografía | Sans-serif moderna, jerarquía clara (display / heading / body / caption) |
 | Iconografía | Material Design icons (consistente con `dark_mode`/`light_brightness_5` ya definidos) |
-| Transiciones globales | `transition: all 0.3s ease` para cambios de estado de barra y componentes |
+| Transiciones globales | Propiedades específicas: `transition-transform`, `transition-[padding]`, `transition-colors` — nunca `transition-all`. Duraciones 160-300ms. |
 | Bordes | Redondeados consistentes (radius medio-alto, look "OpenSaaS") |
 | Sombra | Suave, usada en barra contraída y popovers (no sombras duras) |
 
@@ -35,12 +35,14 @@ Versión: 1.0 · Fecha: 2026-06-19
 
 ### 3.1 Barra de navegación
 
-**Visitante:**
+**Visitante (fuera de marketplace):**
 ```
 [Logo]   Nosotros  Ejemplos  Blog  Productos        [🌙/☀️] [Entrar]
 ```
-**Visitante autenticado en sesión activa:** "Entrar" → avatar + nombre.
-
+**Visitante (en `/productos`):**
+```
+[Logo]   Nosotros  Ejemplos  Blog  Productos   [🔍 buscar...]   [🌙/☀️] [Entrar]
+```
 **Autenticado, fuera de marketplace:**
 ```
 [Logo]   Mi Aprendizaje   Marketplace        [🛒3] [⚙️] [Avatar ▾]
@@ -50,20 +52,36 @@ Versión: 1.0 · Fecha: 2026-06-19
 [Logo]   Mi Aprendizaje   Marketplace   [🔍 buscar...]   [🛒3] [⚙️] [Avatar ▾]
 ```
 
-Estados a implementar: default, scrolled (píldora), hidden (al bajar en marketplace), mobile (hamburguesa).
+- **Search bar:** solo visible en `/productos`. 180px default, expande a full-width al hover/focus via CSS `group-focus-within` (sin JS adicional). Transición 300ms ease-out. El valor se sincroniza con `?search=` query param.
+- **Entrar button:** siempre visible cuando no hay sesión (sin skeleton/parpadeo). `memo()` en NavBar para evitar re-renders innecesarios.
+- **Transiciones:** propiedades específicas (`transform`, `padding`) — no `transition-all`.
+- **Logo:** scroll suave al tope con `window.scrollTo({ top: 0, behavior: 'smooth' })`.
+- Estados: default, scrolled (píldora), hidden (al bajar en marketplace), mobile (hamburguesa + Sheet).
+- Mobile menu: CSS transitions (no keyframes) — interruptibles, retargets al cerrar.
 
 ### 3.2 Landing
 
 Orden de secciones: Hero → Nosotros → Ejemplos → Blog (carrusel) → Footer.
-- Hero: fondo con partículas sutiles o gradiente animado (no debe afectar Lighthouse performance — usar CSS/Canvas ligero, no librerías pesadas).
-- Blog: carrusel con auto-scroll, pausa al hover, navegación por teclado (flechas) y swipe táctil.
+
+**Transiciones entre rutas:**
+- `PageTransition` envuelve `<main>` en `layout.tsx`. Exit 150ms + enter 250ms (`opacity` + `translateY(4px)`). Easing: `cubic-bezier(0.23, 1, 0.32, 1)`.
+
+**Animaciones GSAP ScrollTrigger (landing):**
+- **Hero:** parallax — contenido se desplaza `y: -30` y opaca a 0.7 al hacer scroll (scrub: 1s).
+- **Nosotros:** iconos hacen `scale 0→1` + `rotation -10→0` con `back.out(1.5)`, stagger 80ms. Se activa cuando el 88% del icono entra en viewport.
+- **Ejemplos:** título fade+slide-up, cards fan-out con `y: 50→0`, `scale: 0.96→1`, stagger 100ms. Trigger: top 80% de la sección.
+- **Blog:** título fade+slide-up, cards slide-in con `y: 40→0`, `scale: 0.97→1`, stagger 80ms. Trigger: top 80%.
+- Todos los triggers son `once: true` (se animan solo la primera vez).
+
+**Reveal CSS (fallback):**
+- `ScrollReveal` component: IntersectionObserver con `rootMargin: -80px`. Aplica `animate-reveal-up` (350ms). Se usa para secciones que no necesitan animación GSAP.
 - Footer: legal, redes, contacto, selector ES/EN, banner de cookies (capa superpuesta, no parte del footer en sí).
 
 ### 3.3 Marketplace
 
 ```
-[Barra con buscador]
-[Tabs: VR | Cursos | Automatizaciones]  [Precio ▾] [Ordenar ▾]
+[Barra con buscador]                          ← solo en /productos, en NavBar
+[Tabs: Todos | VR | Cursos | Automatizaciones] [Precio ▾ custom dropdown]
 ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
 │ chip    │ │ chip    │ │ chip    │ │ chip    │
 │ título  │ │ título  │ │ título  │ │ título  │
@@ -71,10 +89,16 @@ Orden de secciones: Hero → Nosotros → Ejemplos → Blog (carrusel) → Foote
 │ $precio │ │ $precio │ │ ...     │ │ ...     │
 │[+carrito hover]                            │
 └────────┘ └────────┘ └────────┘ └────────┘
+[Skeleton cards...]                           ← infinite scroll
 ```
-- Skeleton de tarjeta mientras carga (mismo layout, bloques grises animados).
-- Estado "sin resultados": ilustración + texto + sugerencias de categorías alternativas.
-- Paginación o infinite scroll (decisión técnica en TRD, aquí solo el patrón visual: scroll continuo con skeleton al final).
+
+- **Filtros:** tabs de categoría (Todos/VR/Cursos/Automatizaciones) — select nativo en móvil.
+- **Sort:** custom dropdown (no select nativo) — opciones: "Más recientes", "Precio bajo", "Precio alto", "Descuento".
+- **Infinite scroll:** IntersectionObserver con `rootMargin: 200px`, 8 productos por página. Skeleton loading al final.
+- **Búsqueda:** se sincroniza con `?search=` del NavBar. Meilisearch si está disponible, fallback a DB.
+- **Skeleton de tarjeta** mientras carga (mismo layout, bloques grises animados).
+- **Estado "sin resultados":** ilustración + texto + sugerencias de categorías alternativas.
+- **Data:** productos reales de Prisma (seed script con 9 productos de ejemplo).
 
 ### 3.4 Detalle de producto
 
