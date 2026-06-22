@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 
 interface Product {
   id: string;
-  type: 'course' | 'vr_experience' | 'ai_automation';
+  type: string;
   title: string;
   slug: string;
   description: string;
@@ -26,6 +26,8 @@ function getTypeBadge(type: Product['type']) {
       return { label: 'VR', className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' };
     case 'ai_automation':
       return { label: 'IA', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' };
+    default:
+      return { label: type, className: 'bg-secondary text-secondary-foreground' };
   }
 }
 

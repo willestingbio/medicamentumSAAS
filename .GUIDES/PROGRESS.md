@@ -137,12 +137,12 @@ Actualizado: 2026-06-22
 - [x] ProductInfoPanel sticky: precio, rating, capacidad, duración, instructor, acciones
 - [x] ProductReviews: lista de reseñas con avatar, rating, comentario
 - [x] RelatedProducts: 3 productos relacionados
-- [ ] Conexión con DB real (productos de InsForge/Prisma)
-- [ ] Búsqueda con Meilisearch
-- [ ] Infinite scroll / paginación
-- [ ] Visor 3D R3F para productos VR
+- [x] Conexión con DB real (Server Actions: getProducts, getProductBySlug, getRelatedProducts)
+- [x] Búsqueda con Meilisearch (lib/meili.ts, fallback a DB si no disponible)
+- [x] Infinite scroll / paginación (IntersectionObserver + load more)
+- [x] Visor 3D R3F para productos VR (React Three Fiber + Drei + OrbitControls + autoRotate)
 
-**Estado: Fase 3 ~EN PROGRESO** — UI completa con datos placeholder, falta conexión a DB y Meilisearch
+**Estado: Fase 3 COMPLETA ✅** — marketplace con DB, búsqueda, infinite scroll, visor 3D
 
 ## Fase 4 — Carrito y checkout (Wompi)
 - [ ] No iniciada (bloqueada por Fase 2.5)

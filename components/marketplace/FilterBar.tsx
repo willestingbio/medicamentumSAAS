@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -20,15 +21,33 @@ const sortOptions = [
 ];
 
 export function FilterBar() {
-  const [activeCategory, setActiveCategory] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState('popular');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
+
+  function updateParams(key: string, value: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value && value !== 'all' && value !== 'popular') {
+      params.set(key, value);
+    } else {
+      params.delete(key);
+    }
+    router.push(`/productos?${params.toString()}`);
+  }
+
+  function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    updateParams('search', searchQuery);
+  }
+
+  const activeCategory = searchParams.get('type') || 'all';
+  const activeSort = searchParams.get('sort') || 'popular';
 
   return (
     <div className="space-y-4">
       {/* Search + Sort */}
       <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
+        <form onSubmit={handleSearch} className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
             placeholder="Buscar cursos, VR, automatizaciones..."
@@ -36,10 +55,10 @@ export function FilterBar() {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10"
           />
-        </div>
+        </form>
         <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value)}
+          value={activeSort}
+          onChange={(e) => updateParams('sort', e.target.value)}
           className="px-3 py-2 rounded-md border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
         >
           {sortOptions.map((opt) => (
@@ -53,7 +72,7 @@ export function FilterBar() {
         {categories.map((cat) => (
           <button
             key={cat.id}
-            onClick={() => setActiveCategory(cat.id)}
+            onClick={() => updateParams('type', cat.id)}
             className={cn(
               "px-4 py-2 rounded-full text-sm font-medium transition-all duration-200",
               activeCategory === cat.id
