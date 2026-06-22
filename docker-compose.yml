@@ -1,0 +1,43 @@
+# docker-compose.yml — Desarrollo local
+# Uso: docker compose up -d
+# Postgres: localhost:5432 | Meilisearch: localhost:7700
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: medicamentum_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: medicamentum360
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d medicamentum360"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.13
+    container_name: medicamentum_meili
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: dev_master_key_123
+      MEILI_ENV: development
+    ports:
+      - "7700:7700"
+    volumes:
+      - meili_data:/meili_data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--spider", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  meili_data:
