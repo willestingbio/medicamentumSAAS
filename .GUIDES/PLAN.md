@@ -50,7 +50,15 @@ Versión: 3.0 · Fecha: 2026-06-22 · Reemplaza v2.1
 
 ### Pendiente (actualizado para VPS)
 
-- [ ] **`output: 'standalone'`** en `next.config.js` — obligatorio para Docker
+- [x] **Eliminar archivos obsoletos** — `vercel.json`, `insforge.toml`, `.insforge/`, `.vercel/`, `app/api/insforge-token/`, `app/api/debug/` ✅
+- [x] **Limpiar `.env.local.example`** — eliminar referencias a InsForge ✅
+- [x] **Fix `lib/prisma.ts`** — usar `pg.Pool({ max: 10 })` con param queries ✅
+- [x] **Fix `lib/rate-limit.ts`** — limpieza periódica de entries expirados ✅
+- [x] **Fix `app/api/test/rls-isolation/route.ts`** — eliminar refs a InsForge ✅
+- [x] **Fix `.github/workflows/rls-test.yml`** — reescribir para Postgres Docker ✅
+- [x] **Crear `app/api/health/route.ts`** — health check con DB verification ✅
+- [x] **Crear `lib/storage/client.ts`** — Cloudflare R2 (S3-compatible) ✅
+- [x] **`output: 'standalone'`** en `next.config.ts` ✅
 - [ ] **Dockerfile multi-stage** (ver `DEPLOY.md §4`) — crear y probar localmente
 - [ ] **`docker-compose.yml`** con todos los servicios (app, postgres, redis, meilisearch, nginx, certbot) — ver `DEPLOY.md §5`
 - [ ] **Nginx config** con proxy_buffering off, rate limiting, SSL — ver `DEPLOY.md §6`
@@ -186,6 +194,8 @@ Añadir a las desviaciones ya documentadas en v2.1 §12:
 8. **`output: 'standalone'`** agregado a `next.config.js` — requerido para Docker.
 9. **`DATABASE_URL` sin `?pgbouncer=true`** — con Postgres propio en Docker, la conexión es TCP directa.
 10. **Bridge JWT `/api/insforge-token` eliminado** — ya no necesario.
+11. **Archivos obsoletos eliminados del repo:** `vercel.json`, `insforge.toml`, `.insforge/`, `.vercel/`, `app/api/debug/`.
+12. **`lib/prisma.ts` usa `pg.Pool({ max: 10 })`** — control explícito de conexiones a Postgres.
 
 ---
 

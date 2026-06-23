@@ -199,10 +199,10 @@ Este proyecto **ya no usa InsForge**. Todo lo que antes hacía InsForge ha sido 
 | Antes (InsForge) | Ahora (VPS) |
 |---|---|
 | InsForge Postgres (no TCP) | Postgres 16 en Docker (TCP directo) |
-| `@insforge/sdk` `createAdminClient` | Prisma directamente |
+| `@insforge/sdk` `createAdminClient` | Prisma directamente con `pg.Pool` |
 | `npx @insforge/cli db query` | `npx prisma migrate deploy` |
 | InsForge Storage | Cloudflare R2 (SDK S3-compatible) |
-| Bridge JWT `/api/insforge-token` | No necesario (Prisma bypassa RLS con service_role) |
+| Bridge JWT `/api/insforge-token` | Eliminado (no necesario con Prisma + RLS directo) |
 | Pooler InsForge | `pg.Pool` con max:10 en `lib/prisma.ts` |
 
 Si ves referencias a InsForge en cualquier archivo del proyecto, son obsoletas y deben ser actualizadas.

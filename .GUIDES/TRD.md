@@ -253,8 +253,8 @@ Sin cambios. La configuración de ISR/SSG funciona igual en modo standalone — 
 
 ```env
 # Postgres (Docker en VPS)
-DATABASE_URL=postgresql://medicamentum:<password>@postgres:5432/medicamentum360
-DIRECT_URL=postgresql://medicamentum:<password>@postgres:5432/medicamentum360
+DATABASE_URL=postgresql://medicamentum:<password>@postgres:5432/medicamentum360?sslmode=disable
+DIRECT_URL=postgresql://medicamentum:<password>@postgres:5432/medicamentum360?sslmode=disable
 # (En VPS con Docker, DATABASE_URL y DIRECT_URL son la misma — no hay pooler externo)
 
 POSTGRES_USER=medicamentum

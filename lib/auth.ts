@@ -88,7 +88,7 @@ export const auth = betterAuth({
     },
   },
 
-  // Verificación de email vía InsForge (Brevo SMTP o cloud relay)
+  // Campos adicionales del usuario
   user: {
     additionalFields: {
       role: {
@@ -167,6 +167,7 @@ export const auth = betterAuth({
     },
   },
 
+  // Rate limiting: en producción VPS, migrar a Redis store cuando esté disponible
   rateLimit: {
     enabled: true,
     window: 60,

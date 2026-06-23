@@ -125,19 +125,22 @@ export async function GET() {
     });
   }
 
-  // Test 5: Bridge route reachability check
+  // Test 5: Verificar conexión a Postgres y variables de sesión RLS
   try {
-    const baseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000';
+    const sessionVars = await prisma.$queryRaw<
+      { current_user_id: string | null; current_org_id: string | null }[]
+    >`SELECT current_setting('app.current_user_id', true) as current_user_id, current_setting('app.current_org_id', true) as current_org_id`;
+    const vars = sessionVars[0];
     results.push({
-      name: 'Bridge Route Available',
-      description: 'Endpoint /api/insforge-token está configurado',
-      passed: true,
-      detail: `Bridge route en ${baseUrl}/api/insforge-token (verificar en runtime)`,
+      name: 'RLS Session Variables',
+      description: 'Variables de sesión RLS configuradas en Postgres',
+      passed: !!vars?.current_user_id,
+      detail: `current_user_id=${vars?.current_user_id || '(no set)'}, current_org_id=${vars?.current_org_id || '(no set)'}`,
     });
   } catch (e) {
     results.push({
-      name: 'Bridge Route Check',
-      description: 'Error',
+      name: 'RLS Session Variables',
+      description: 'Error al verificar variables de sesión',
       passed: false,
       detail: '',
       error: e instanceof Error ? e.message : String(e),
@@ -151,6 +154,6 @@ export async function GET() {
     timestamp: new Date().toISOString(),
     summary: allPassed ? 'ALL PASSED' : 'SOME FAILED',
     details: results,
-    note: 'Prisma bypasses RLS (service_role connection). RLS se prueba via InsForge SDK + bridge JWT en client-side.',
+    note: 'RLS se evalúa en cada query via SET de variables de sesión (app.current_user_id, app.current_org_id).',
   });
 }

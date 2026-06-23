@@ -58,7 +58,7 @@ app/
 
 ### 1.2 Singleton de PrismaClient
 
-Con Postgres en Docker (conexión TCP directa), el singleton es más simple que antes — no hay pooler externo ni InsForge SDK:
+Con Postgres en Docker (conexión TCP directa), el singleton usa `pg.Pool` para controlar el número de conexiones:
 
 ```ts
 // lib/prisma.ts
@@ -71,8 +71,8 @@ const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 function createPrismaClient() {
   const pool = new pg.Pool({
     connectionString: process.env.DATABASE_URL,
-    max: 10,                  // máximo de conexiones en el pool
-    idleTimeoutMillis: 30000, // cerrar conexiones inactivas después de 30s
+    max: 10,
+    idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 2000,
   });
   const adapter = new PrismaPg(pool);
@@ -368,6 +368,7 @@ NEXT_PUBLIC_BRAND_COLOR=#8127cf
 
 ## 12. Seguridad — checklist pre-producción (adaptado a VPS)
 
+- [ ] Archivos obsoletos eliminados: `vercel.json`, `insforge.toml`, `.insforge/`, `app/api/insforge-token/`
 - [ ] RLS cross-org test (`tests/rls-isolation-test.sql`) pasa — ejecutar con `docker exec -i medicamentum_postgres psql -U medicamentum -d medicamentum360 < tests/rls-isolation-test.sql`
 - [ ] Webhook de Wompi: test de idempotencia (mismo evento dos veces no duplica inscripción ni orden)
 - [ ] Test de autologin token: expira en segundos, uso único

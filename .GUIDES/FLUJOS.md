@@ -187,7 +187,7 @@ Versión: 1.0 · Fecha: 2026-06-22
 2. Click → `generateCertificate(enrollmentId)` (Server Action):
    - Verifica que el `Enrollment` existe, `status = "completed"`, y `userId` coincide.
    - Genera PDF (plantilla con nombre, curso, fecha, QR de verificación).
-   - Sube a InsForge Storage `certificates/` con URL firmada.
+   - Sube a Cloudflare R2 `certificates/` con URL firmada.
    - Crea registro `Certificate` en DB con `pdfUrl` y `issuedAt`.
 3. `CertificateModal` se abre: preview del certificado + "Descargar PDF" + "Compartir en LinkedIn".
 4. "Descargar PDF" → fetch de la URL firmada + descarga en el navegador.
@@ -232,7 +232,7 @@ Versión: 1.0 · Fecha: 2026-06-22
 **Happy path:**
 1. `super_admin` va a `/admin/products` → "Nuevo producto".
 2. Llena información general: título, descripción. El slug se genera automáticamente y puede editarlo.
-3. Sube imagen de portada: drag & drop o click → preview + crop inline → upload a InsForge Storage.
+3. Sube imagen de portada: drag & drop o click → preview + crop inline → upload a Cloudflare R2.
 4. Selecciona tipo: Curso / VR / Automatización.
 5. Configura metadatos del tipo (sección condicional — ver flujo 12 para Moodle).
 6. Configura precio + cupo en la columna derecha.

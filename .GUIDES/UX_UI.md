@@ -116,6 +116,7 @@ Orden de secciones: Hero → Nosotros → Ejemplos → Blog (carrusel) → Foote
 - Columna derecha: `position: sticky` dentro del viewport mientras la izquierda scrollea.
 - VR: visor 3D con controles de rotación/zoom, carga lazy, fallback a imagen estática si WebXR no es compatible con el dispositivo.
 - Compartir: botón con íconos WhatsApp/email, genera enlace directo.
+- **RSC streaming:** en VPS, requiere `proxy_buffering off` en Nginx (`DEPLOY.md§6`).
 
 ### 3.5 Carrito (popover)
 

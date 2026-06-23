@@ -496,8 +496,22 @@ healthcheck:
 
 ```ts
 // app/api/health/route.ts
+import { prisma } from "@/lib/prisma";
+
 export async function GET() {
-  return Response.json({ status: 'ok', timestamp: new Date().toISOString() });
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return Response.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      services: { database: 'ok' },
+    });
+  } catch {
+    return Response.json(
+      { status: 'error', timestamp: new Date().toISOString(), services: { database: 'error' } },
+      { status: 503 }
+    );
+  }
 }
 ```
 
@@ -538,6 +552,16 @@ export async function uploadFile(
     })
   );
   return `${process.env.STORAGE_PUBLIC_URL}/${key}`;
+}
+
+export async function getSignedDownloadUrl(key: string, expiresInSeconds = 3600): Promise<string> {
+  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+  return getSignedUrl(
+    storageClient,
+    new GetObjectCommand({ Bucket: process.env.STORAGE_BUCKET!, Key: key }),
+    { expiresIn: expiresInSeconds }
+  );
 }
 ```
 
@@ -724,7 +748,8 @@ docker exec -i medicamentum_postgres psql -U medicamentum -d medicamentum360 < m
 
 ## 15. Checklist pre-producción (adaptado a VPS)
 
-- [ ] `output: 'standalone'` en `next.config.js`
+- [ ] Archivos obsoletos eliminados del repo: `vercel.json`, `insforge.toml`, `.insforge/`, `.vercel/`
+- [ ] `output: 'standalone'` en `next.config.ts`
 - [ ] Dockerfile multi-stage probado localmente (`docker build -t app . && docker run -p 3000:3000 app`)
 - [ ] Nginx con `proxy_buffering off` para RSC streaming
 - [ ] SSL instalado y HTTPS funcionando

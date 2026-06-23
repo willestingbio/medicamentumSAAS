@@ -9,12 +9,26 @@ on:
       - 'migrations/**'
       - 'lib/auth.ts'
       - 'lib/rls-store.ts'
+      - 'lib/prisma.ts'
 
 jobs:
   rls-test:
     name: RLS Cross-Org Isolation
     runs-on: ubuntu-latest
-    environment: staging
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: medicamentum360
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d medicamentum360"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,28 +37,15 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npx prisma generate
+      - name: Apply migrations
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/medicamentum360
+        run: npx prisma migrate deploy
+      - name: Seed test data
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/medicamentum360
+        run: npx tsx tests/rls-seed.ts
       - name: Run RLS isolation test
         env:
-          INSFORGE_API_KEY: ${{ secrets.INSFORGE_API_KEY }}
-          INSFORGE_PROJECT_URL: ${{ secrets.INSFORGE_PROJECT_URL }}
-        run: |
-          echo "Running RLS isolation test against InsForge..."
-          node -e "
-            const { execSync } = require('child_process');
-            const fs = require('fs');
-            const sql = fs.readFileSync('tests/rls-isolation-test.sql', 'utf8');
-            
-            // Execute via InsForge CLI
-            try {
-              const result = execSync(
-                'npx @insforge/cli db query --file tests/rls-isolation-test.sql',
-                { encoding: 'utf8', timeout: 30000 }
-              );
-              console.log(result);
-              console.log('✅ RLS isolation test passed');
-            } catch (err) {
-              console.error('❌ RLS isolation test failed');
-              console.error(err.stderr || err.message);
-              process.exit(1);
-            }
-          "
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/medicamentum360
+        run: psql -U postgres -d medicamentum360 -f tests/rls-isolation-test.sql

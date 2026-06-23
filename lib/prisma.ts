@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import pg from 'pg';
 import { rlsClaimsStore } from './rls-store';
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
@@ -7,8 +8,17 @@ const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 function createPrisma() {
   const url = process.env.DATABASE_URL || '';
 
+  const pool = new pg.Pool({
+    connectionString: url,
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
+  });
+
+  const adapter = new PrismaPg(pool);
+
   const base = new PrismaClient({
-    adapter: new PrismaPg({ connectionString: url }),
+    adapter,
     log:
       process.env.NODE_ENV === 'development'
         ? ['error', 'warn']
@@ -21,13 +31,14 @@ function createPrisma() {
         async $allOperations({ args, query }) {
           const claims = rlsClaimsStore.getStore();
           if (claims?.sub) {
-            // VPS Postgres: set session variables for RLS policies
             await base.$executeRawUnsafe(
-              `SET app.current_user_id = '${claims.sub}'`,
+              `SET app.current_user_id = $1`,
+              claims.sub,
             );
             if (claims.organization_id) {
               await base.$executeRawUnsafe(
-                `SET app.current_org_id = '${claims.organization_id}'`,
+                `SET app.current_org_id = $1`,
+                claims.organization_id,
               );
             }
           }

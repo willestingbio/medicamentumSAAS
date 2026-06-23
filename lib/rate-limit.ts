@@ -1,10 +1,24 @@
 const rateMap = new Map<string, { count: number; resetAt: number }>();
 
+// Limpieza periódica de entries expirados (cada 5 min)
+const CLEANUP_INTERVAL = 5 * 60 * 1000;
+let lastCleanup = Date.now();
+
+function cleanup() {
+  const now = Date.now();
+  if (now - lastCleanup < CLEANUP_INTERVAL) return;
+  lastCleanup = now;
+  for (const [key, entry] of rateMap) {
+    if (now > entry.resetAt) rateMap.delete(key);
+  }
+}
+
 export function checkRateLimit(
   key: string,
   limit: number = 5,
   windowMs: number = 60_000
 ): { allowed: boolean; remaining: number; resetIn: number } {
+  cleanup();
   const now = Date.now();
   const entry = rateMap.get(key);
 
