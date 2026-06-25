@@ -36,6 +36,12 @@ services:
       - MOODLE_SITE_NAME=Medicamentum360 LMS (local)
       - MOODLE_LANG=es
       - MOODLE_DATA_DIR=/var/www/moodledata
+      # Docker Links-style vars (jhardison/moodle image reads these for config.php)
+      - DB_PORT_3306_TCP_ADDR=mariadb
+      - DB_PORT_3306_TCP_PORT=3306
+      - DB_ENV_MYSQL_DATABASE=moodle
+      - DB_ENV_MYSQL_USER=moodle
+      - DB_ENV_MYSQL_PASSWORD=medicamentum360_moodle
     ports:
       - "8090:80"
     volumes:

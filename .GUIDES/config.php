@@ -1,7 +1,7 @@
 <?php
 unset($CFG);
 $CFG = new stdClass();
-$CFG->dbtype = "mariadb";
+$CFG->dbtype = "mysqli";
 $CFG->dblibrary = "native";
 $CFG->dbhost = "mariadb";
 $CFG->dbname = "moodle";
