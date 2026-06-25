@@ -9,6 +9,7 @@ export default defineConfig({
     globals: true,
     include: ['tests/**/*.test.{ts,tsx}'],
     exclude: ['tests/e2e/**', 'tests/rls-isolation-test.sql'],
+    pool: 'threads',
   },
   resolve: {
     alias: {

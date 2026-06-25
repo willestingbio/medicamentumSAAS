@@ -167,14 +167,12 @@ export const NavBar = memo(function NavBar({ navigationItems }: NavBarProps) {
         )} aria-label="Global">
 
           {/* Logo */}
-          <a
+          <Link
             href="/"
             onClick={(e) => {
-              e.preventDefault();
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-              if (window.location.pathname !== '/') {
-                window.location.href = '/#';
-                setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
+              if (window.location.pathname === '/') {
+                e.preventDefault();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
               }
             }}
             className="flex items-center gap-2 hover:text-primary transition-colors duration-200 ease-out group shrink-0 mr-8"
@@ -183,7 +181,7 @@ export const NavBar = memo(function NavBar({ navigationItems }: NavBarProps) {
               <span className="text-primary-foreground font-bold text-sm">M3</span>
             </div>
             <span className="font-semibold text-foreground hidden sm:block">Medicamentum360</span>
-          </a>
+          </Link>
 
           {/* Desktop Nav Links — left aligned */}
           <ul className="hidden lg:flex items-center gap-1">
