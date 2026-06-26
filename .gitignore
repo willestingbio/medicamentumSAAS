@@ -46,6 +46,7 @@ lerna-debug.log*
 # Miscellaneous
 .cache/
 .tmp/
+*.exe
 # InsForge & AI agent files
 .insforge
 insforge.toml
