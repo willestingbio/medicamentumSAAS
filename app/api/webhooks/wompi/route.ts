@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     const order = await prisma.order.findFirst({
       where: { wompiReference: reference },
       include: {
-        items: { include: { product: true } },
+        items: { include: { product: { include: { course: true } } } },
         user: true,
       },
     });
@@ -109,8 +109,13 @@ export async function POST(req: NextRequest) {
           update: {}, // No actualizar si ya existe
         });
 
-        // Si es un curso con moodleCourseId, inscribir en Moodle
-        if (item.product.moodleCourseId && order.user.moodleUserId) {
+        // Si es un curso moodle_legacy con moodleCourseId, inscribir en Moodle
+        // Cursos nativos (Course Builder) NO deben inscribirse en Moodle
+        if (
+          item.product.course?.contentSource === 'moodle_legacy' &&
+          item.product.moodleCourseId &&
+          order.user.moodleUserId
+        ) {
           try {
             const moodleUserId = order.user.moodleUserId;
             const moodleCourseId = item.product.moodleCourseId;
@@ -127,7 +132,7 @@ export async function POST(req: NextRequest) {
           } catch (error) {
             console.error(`[Wompi Webhook] Moodle enrollment failed for user ${order.userId}:`, error);
             // No fallar el webhook por un error de Moodle — el enrollment en DB ya está creado
-            // El retry job de Moodle se encargará después
+            // El syncMoodleProgress se encargará después
           }
         }
       }
