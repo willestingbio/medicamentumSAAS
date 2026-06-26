@@ -50,6 +50,27 @@ enum OrderStatus {
   refunded
 }
 
+enum VendorStatus {
+  pending_kyc
+  pending_review
+  active
+  suspended
+}
+
+enum ReviewStatus {
+  draft
+  pending_review
+  approved
+  rejected
+}
+
+enum PayoutStatus {
+  pending
+  processing
+  paid
+  failed
+}
+
 // ===== Models =====
 
 model Organization {
@@ -119,16 +140,17 @@ model User {
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
-  enrollments    Enrollment[]
-  orders         Order[]
-  cartItems      CartItem[]
-  certificates   Certificate[]
-  reviews        Review[]
-  calendarEvents CalendarEvent[]
+  enrollments        Enrollment[]
+  orders             Order[]
+  cartItems          CartItem[]
+  certificates       Certificate[]
+  reviews            Review[]
+  calendarEvents     CalendarEvent[]
   calendarConnection CalendarConnection?
-  vrKeys         VrKey[]
-  sessions       Session[]
-  accounts       Account[]
+  vrKeys             VrKey[]
+  vendor             Vendor?
+  sessions           Session[]
+  accounts           Account[]
 
   employeeAssignments EmployeeAssignment[] @relation("AssignedUser")
   assignedByMe        EmployeeAssignment[] @relation("AssignedBy")
@@ -181,10 +203,10 @@ model Verification {
 }
 
 model Product {
-  id             String      @id @default(cuid())
+  id             String       @id @default(cuid())
   type           ProductType
   title          String
-  slug           String      @unique
+  slug           String       @unique
   description    String
   priceCents     Int
   discountCents  Int?
@@ -192,9 +214,12 @@ model Product {
   moodleCourseId Int?
   vrAssetUrl     String?
   capacity       Int?
-  published      Boolean     @default(false)
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  vendorId       String?
+  vendor         Vendor?      @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  reviewStatus   ReviewStatus @default(draft)
+  published      Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   enrollments  Enrollment[]
   orderItems   OrderItem[]
@@ -515,4 +540,49 @@ model CalendarConnection {
   updatedAt    DateTime @updatedAt
 
   @@map("calendar_connections")
+}
+
+// ===== Marketplace Multi-Vendor (TRD.md §20.2) =====
+
+model Vendor {
+  id              String       @id @default(cuid())
+  userId          String       @unique
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName     String
+  slug            String       @unique
+  bio             String?      @db.Text
+  status          VendorStatus @default(pending_kyc)
+  taxIdType       String?
+  taxIdNumber     String?
+  taxDocumentKey  String?
+  bankAccountInfo Json?
+  commissionPct   Float        @default(20)
+  approvedAt      DateTime?
+  approvedBy      String?
+  createdAt       DateTime     @default(now())
+
+  products Product[]
+  payouts  Payout[]
+
+  @@index([status])
+  @@index([slug])
+  @@map("vendors")
+}
+
+model Payout {
+  id               String       @id @default(cuid())
+  vendorId         String
+  vendor           Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  periodStart      DateTime
+  periodEnd        DateTime
+  grossAmount      Int
+  commissionAmount Int
+  netAmount        Int
+  status           PayoutStatus @default(pending)
+  wompiPayoutRef   String?
+  paidAt           DateTime?
+  createdAt        DateTime     @default(now())
+
+  @@index([vendorId, status])
+  @@map("payouts")
 }
