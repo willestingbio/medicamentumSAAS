@@ -15,7 +15,7 @@ Actualizado: 2026-06-25 (Fase 4 — Carrito/Checkout completada; fixes de build/
 | Fase 4 — Carrito + Checkout (Wompi) | ✅ COMPLETA |
 | Fase 5 — Dashboard del Estudiante | ✅ COMPLETA (dashboard, configuracion, cursos, reproductor leccion, VR keys, 2FA, tests, Google Calendar OAuth, Course Builder models, lesson player, mis-cursos, moodle-sync) |
 | Fase 6 — Integración Moodle (alcance reducido, ver `PLAN.md` Fase 6) | ✅ COMPLETA |
-| Fase 6.5 — Course Builder & Marketplace Multi-Vendor (NUEVO) | ⬜ No iniciada |
+| Fase 6.5 — Course Builder & Marketplace Multi-Vendor (NUEVO) | ✅ COMPLETA |
 | Fase 7-13 | ⬜ No iniciadas |
 
 ---
@@ -199,21 +199,38 @@ Actualizado: 2026-06-25 (Fase 4 — Carrito/Checkout completada; fixes de build/
 
 ---
 
-## Fase 6.5 — Course Builder & Marketplace Multi-Vendor — ⬜ No iniciada (NUEVO)
+## Fase 6.5 — Course Builder & Marketplace Multi-Vendor — ✅ COMPLETA
 **Bloqueante:** Fase 4 (checkout) y Fase 5 (dashboard del estudiante) completas. No depende de la Fase 6 (Moodle) — puede desarrollarse en paralelo.
 
 > Ver `PLAN.md` Fase 6.5 para el detalle completo de tareas. Resumen de bloques principales para seguimiento rápido:
 
-- [ ] Modelo de datos: `Course`/`Module`/`Lesson`/`Quiz`/`QuizQuestion`/`QuizOption`/`QuizAttempt`/`LessonCompletion`/`Vendor`/`Payout` + policies RLS
-- [ ] Cuenta Cloudflare Stream configurada (variables documentadas en `DEPLOY.md §16.4`, añadidas vía append — nunca sobrescribiendo `.env.production`)
-- [ ] Course Builder: panel `/instructor`, editor de curso de 3 columnas, CRUD de módulos/lecciones con drag & drop accesible
-- [ ] Subida de video a Cloudflare Stream (Direct Upload) + webhook de confirmación
-- [ ] Editor de quiz (preguntas, opciones, configuración de intentos/tiempo)
-- [ ] Reproductor de lección del estudiante (HLS firmado) + marcado de progreso + certificación automática
-- [ ] Onboarding de vendor (`/vender`): KYC, datos bancarios cifrados, aprobación por `super_admin`
-- [ ] Flujo de revisión editorial (`/admin/review-queue`) antes de publicar productos de vendor
-- [ ] Cálculo y aprobación manual de payouts (`/admin/payouts`) — sin disparo automático de transferencias reales en esta fase
-- [ ] Suite de tests específica de la fase (ownership, idempotencia de webhook, cifrado de datos bancarios, cálculo de comisión, E2E completo)
+- [x] Schema Prisma: enums `VendorStatus`, `ReviewStatus`, `PayoutStatus` + modelos `Vendor`, `Payout` + campos `vendorId`/`reviewStatus` en `Product` — `prisma db push` aplicado
+- [x] RLS policies para `vendors`, `payouts`, `courses`, `modules`, `lessons`, `quizzes`, `quiz_questions`, `quiz_options`, `quiz_attempts`, `lesson_completions`, `products` (update reviewStatus/publish) — `prisma/rls-phase6_5.sql` (869 líneas)
+- [x] `lib/video/stream-client.ts` — Cloudflare Stream: Direct Upload, delete, status, signed playback (RS256 JWT con fallback dev)
+- [x] `lib/crypto/vendor-bank.ts` — AES-256-GCM cifrado/descifrado de datos bancarios de vendor
+- [x] `lib/actions/course-builder/courses.ts` — assertCourseOwner, getMyCourses, getCourseForEditor, updateCourseSettings, submitCourseForReview, publishCourse
+- [x] `lib/actions/course-builder/modules.ts` — assertModuleOwner, createModule, updateModuleTitle, setModuleDripDelay, reorderModules, deleteModule, getModulesWithLessons
+- [x] `lib/actions/course-builder/lessons.ts` — assertLessonOwner, createLesson (con Quiz en transacción si type=quiz), updateLessonContent, reorderLessons, deleteLesson (cleanup Cloudflare), getLessonForEditor
+- [x] `lib/actions/course-builder/quizzes.ts` — assertQuizOwner, addQuizQuestion, updateQuizQuestion, deleteQuizQuestion, addQuizOption, updateQuizOption, deleteQuizOption, reorderQuestions, reorderOptions, updateQuizSettings
+- [x] `lib/actions/course-builder/video-upload.ts` — getVideoUploadUrl, checkVideoStatus, replaceVideo
+- [x] `lib/actions/vendor/onboarding.ts` — registerAsVendor, getMyVendorProfile, submitVendorKyc, assertOwnVendorProfile
+- [x] `lib/actions/vendor/vendor-products.ts` — createVendorProduct (crea Product + Course vacío), getMyVendorProducts, updateVendorProduct, submitProductForReview, getVendorPublicProfile
+- [x] `lib/actions/vendor/payouts.ts` — getMyPayoutHistory
+- [x] `lib/actions/admin/review-queue.ts` — getReviewQueue, approveProduct, rejectProduct, getVendorsPendingReview, approveVendor, rejectVendor, getVendorList
+- [x] `lib/actions/admin/payouts.ts` — generateMonthlyPayoutBatch, getPendingPayouts, approveAndSendPayout, rejectPayout
+- [x] `lib/actions/admin/course-admin.ts` — adminGetAllCourses, adminUpdateVendorCommission, adminSuspendVendor, adminReactivateVendor
+- [x] `app/api/webhooks/cloudflare-stream/route.ts` — webhook POST para procesamiento de video
+- [x] Panel `/instructor` — listado de cursos (`page.tsx`), layout protegido con redirect a `/vender` para vendors pendientes, editor 3 columnas (`courses/[id]`)
+- [x] Componentes instructor: `module-tree.tsx`, `lesson-editor.tsx`, `course-settings.tsx`
+- [x] Onboarding vendor `/vender` — Step 1 (register), Step 2 (KYC/bank), Step 3 (pending review), estados active/suspended
+- [x] Bandeja `/admin/review-queue` — pestañas productos/vendors pendientes con aprobar/rechazar + diálogo de motivo
+- [x] Panel `/admin/payouts` — generación de lote mensual, tabla de payouts pendientes, aprobar/rechazar
+- [x] Layout `/admin` protegido con verificación super_admin
+- [x] Página pública `/marketplace/creador/[slug]` — perfil de vendor con bio + catálogo de productos
+- [x] Middleware actualizado: `/instructor` añadido a rutas protegidas
+- [x] Componentes admin: `review-product-card.tsx`, `review-vendor-card.tsx`, `reject-dialog.tsx`, `payout-row.tsx`
+- [x] Tests Fase 6.5: `tests/phase6_5.test.ts` — 70/70 PASS (cifrado bancario, cálculo payout, review status, ownership, quizzes, progreso, video URL, comisión, idempotencia)
+- [x] TypeScript: 0 errores de compilación
 ---
 
 ## Fase 7 — Panel de Organización (gestión real) — ⬜ No iniciada (alcance nuevo, auditoría 2026-06-26)

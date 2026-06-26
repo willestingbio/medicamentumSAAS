@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-const protectedRoutes = ['/dashboard', '/configuracion', '/checkout', '/mis-cursos'];
+const protectedRoutes = ['/dashboard', '/configuracion', '/checkout', '/mis-cursos', '/instructor'];
 const orgRoutes = ['/org'];
 const adminRoutes = ['/admin'];
 
@@ -80,5 +80,6 @@ export const config = {
     '/mis-cursos/:path*',
     '/org/:path*',
     '/admin/:path*',
+    '/instructor/:path*',
   ],
 };
