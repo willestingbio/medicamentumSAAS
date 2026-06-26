@@ -40,13 +40,13 @@ function getTypeBadge(type: Product['type']) {
 
 function StarRating({ rating, count }: { rating: number; count: number }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <div className="flex items-center gap-0.5">
+    <div className="flex items-center gap-1">
+      <div className="flex items-center gap-px">
         {[1, 2, 3, 4, 5].map((star) => (
           <Star
             key={star}
             className={cn(
-              "size-3.5",
+              "size-3",
               star <= Math.round(rating)
                 ? "fill-amber-400 text-amber-400"
                 : "fill-muted text-muted-foreground"
@@ -54,7 +54,16 @@ function StarRating({ rating, count }: { rating: number; count: number }) {
           />
         ))}
       </div>
-      <span className="text-xs text-muted-foreground">({count})</span>
+      <span className="text-[11px] text-muted-foreground">({count})</span>
+    </div>
+  );
+}
+
+function PlaceholderIcon({ type }: { type: Product['type'] }) {
+  const icon = type === 'vr_experience' ? '🥽' : type === 'ai_automation' ? '🤖' : '📚';
+  return (
+    <div className="absolute inset-0 flex items-center justify-center bg-muted/50">
+      <span className="text-2xl">{icon}</span>
     </div>
   );
 }
@@ -62,7 +71,6 @@ function StarRating({ rating, count }: { rating: number; count: number }) {
 export function ProductCard({ product }: {
   product: Product;
 }) {
-  const badge = getTypeBadge(product.type);
   const hasDiscount = product.discountCents !== null && product.discountCents < product.priceCents;
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(false);
@@ -89,55 +97,56 @@ export function ProductCard({ product }: {
 
   return (
     <Link href={`/productos/${product.slug}`}>
-      <Card className="group card-hover h-full">
-        <CardContent className="p-5 flex flex-col h-full">
-          {/* Cover Image Placeholder */}
-          <div className="relative aspect-video rounded-lg bg-muted mb-4 overflow-hidden">
-            <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm">
-              {product.type === 'vr_experience' ? '🎓' : product.type === 'ai_automation' ? '🤖' : '📚'}
-            </div>
-            {/* Type Badge */}
-            <span className={cn(
-              "absolute top-2 left-2 px-2 py-0.5 rounded-full text-xs font-medium",
-              badge.className
-            )}>
-              {badge.label}
+      <Card className="group card-hover h-full overflow-hidden transition-shadow hover:shadow-md">
+        {/* Cover */}
+        <div className="relative aspect-[4/3] bg-muted overflow-hidden">
+          {product.coverImageUrl ? (
+            <img
+              src={product.coverImageUrl}
+              alt={product.title}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            />
+          ) : (
+            <PlaceholderIcon type={product.type} />
+          )}
+          <span className={cn(
+            "absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[10px] font-medium",
+            getTypeBadge(product.type).className
+          )}>
+            {getTypeBadge(product.type).label}
+          </span>
+          {product.capacity && (
+            <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-background/80 backdrop-blur-sm text-muted-foreground flex items-center gap-1">
+              <Users className="size-2.5" />
+              {product.capacity}
             </span>
-            {/* Capacity */}
-            {product.capacity && (
-              <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full text-xs font-medium bg-background/80 backdrop-blur-sm text-muted-foreground flex items-center gap-1">
-                <Users className="size-3" />
-                {product.capacity}
-              </span>
-            )}
-          </div>
+          )}
+        </div>
 
-          {/* Content */}
-          <h3 className="font-semibold text-foreground mb-1 group-hover:text-primary transition-colors line-clamp-1">
+        <CardContent className="p-3 space-y-1.5">
+          <h3 className="font-medium text-sm text-foreground group-hover:text-primary transition-colors line-clamp-1">
             {product.title}
           </h3>
-          <p className="text-sm text-muted-foreground leading-relaxed mb-3 line-clamp-2 flex-1">
+          <p className="text-xs text-muted-foreground leading-relaxed line-clamp-1">
             {product.description}
           </p>
 
-          {/* Rating */}
           <StarRating rating={product.rating} count={product.reviewCount} />
 
-          {/* Price + Cart */}
-          <div className="flex items-center justify-between mt-3 pt-3 border-t">
-            <div className="flex items-baseline gap-2">
+          <div className="flex items-center justify-between pt-1.5 border-t border-border/50">
+            <div className="flex items-baseline gap-1.5">
               {hasDiscount ? (
                 <>
-                  <span className="text-lg font-bold text-foreground">{formatPrice(product.discountCents!)}</span>
-                  <span className="text-sm text-muted-foreground line-through">{formatPrice(product.priceCents)}</span>
+                  <span className="text-sm font-bold text-foreground">{formatPrice(product.discountCents!)}</span>
+                  <span className="text-[11px] text-muted-foreground line-through">{formatPrice(product.priceCents)}</span>
                 </>
               ) : (
-                <span className="text-lg font-bold text-foreground">{formatPrice(product.priceCents)}</span>
+                <span className="text-sm font-bold text-foreground">{formatPrice(product.priceCents)}</span>
               )}
             </div>
             <button
               className={cn(
-                "size-9 rounded-full flex items-center justify-center transition-all duration-200 group-hover:scale-110",
+                "size-8 rounded-full flex items-center justify-center transition-all duration-200",
                 added
                   ? "bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400"
                   : "bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground"
@@ -146,7 +155,7 @@ export function ProductCard({ product }: {
               onClick={handleAddToCart}
               disabled={adding}
             >
-              {added ? <Check className="size-4" /> : <ShoppingCart className="size-4" />}
+              {added ? <Check className="size-3.5" /> : <ShoppingCart className="size-3.5" />}
             </button>
           </div>
         </CardContent>
