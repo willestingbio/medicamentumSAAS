@@ -20,6 +20,7 @@ type Enrollment = {
     coverImageUrl: string | null;
     type: string;
     description: string;
+    moodleCourseId: number | null;
     course: {
       id: string;
       contentSource: string;
@@ -74,16 +75,20 @@ export function MyCoursesContent({ enrollments }: { enrollments: Enrollment[] })
       {enrollments.map((enrollment) => {
         const totalLessons = enrollment.product.course?.modules.flatMap((m) => m.lessons).length ?? 0;
         const statusInfo = getStatusLabel(enrollment.status, enrollment.progressPct);
+        const isMoodleLegacy = enrollment.product.course?.contentSource === 'moodle_legacy';
+
+        const courseHref = isMoodleLegacy && enrollment.product.moodleCourseId
+          ? `/api/moodle/autologin?courseId=${enrollment.product.moodleCourseId}`
+          : enrollment.product.type === 'course' && enrollment.product.course
+            ? `/dashboard/cursos/${enrollment.product.slug}`
+            : `/dashboard`;
 
         return (
           <Link
             key={enrollment.id}
-            href={
-              enrollment.product.type === 'course' && enrollment.product.course
-                ? `/dashboard/cursos/${enrollment.product.slug}`
-                : `/dashboard`
-            }
+            href={courseHref}
             className="group"
+            {...(isMoodleLegacy ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
           >
             <Card className="overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5">
               <div className="relative aspect-video bg-muted">
@@ -111,6 +116,9 @@ export function MyCoursesContent({ enrollments }: { enrollments: Enrollment[] })
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {formatType(enrollment.product.type)}
                     {totalLessons > 0 && ` · ${totalLessons} lecciones`}
+                    {isMoodleLegacy && (
+                      <Badge variant="outline" className="ml-1 text-[10px] px-1.5 py-0">Moodle</Badge>
+                    )}
                   </p>
                 </div>
 

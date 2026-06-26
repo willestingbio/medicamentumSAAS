@@ -277,6 +277,7 @@ export async function getMyEnrollments() {
           coverImageUrl: true,
           type: true,
           description: true,
+          moodleCourseId: true,
           course: {
             select: {
               id: true,

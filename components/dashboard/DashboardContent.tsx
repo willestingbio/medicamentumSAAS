@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { BookOpen, Clock, Trophy, ShoppingCart } from 'lucide-react';
+import { BookOpen, Clock, Trophy, ShoppingCart, ExternalLink } from 'lucide-react';
 import type { DashboardData } from '@/lib/actions/dashboard';
 import type { getVrKeys } from '@/lib/actions/vr-keys';
 import { CertificateCard } from './CertificateCard';
@@ -34,16 +34,10 @@ function getProgressColor(pct: number) {
 
 function EnrollmentItem({ enrollment }: { enrollment: Enrollment }) {
   const progressColor = getProgressColor(enrollment.progressPct);
+  const isMoodleLegacy = enrollment.product.course?.contentSource === 'moodle_legacy';
 
   return (
-    <Link
-      href={
-        enrollment.product.type === 'course'
-          ? `/dashboard/cursos/${enrollment.product.slug}`
-          : `/productos/${enrollment.product.slug}`
-      }
-      className="group flex items-center gap-4 rounded-lg p-3 transition-colors hover:bg-muted/50"
-    >
+    <div className="group flex items-center gap-4 rounded-lg p-3 transition-colors hover:bg-muted/50">
       {enrollment.product.coverImageUrl ? (
         <img
           src={enrollment.product.coverImageUrl}
@@ -69,6 +63,9 @@ function EnrollmentItem({ enrollment }: { enrollment: Enrollment }) {
               Completado
             </Badge>
           )}
+          {isMoodleLegacy && (
+            <Badge variant="outline" className="text-xs">Moodle</Badge>
+          )}
         </div>
         <div className="mt-2 flex items-center gap-3">
           <Progress
@@ -82,13 +79,28 @@ function EnrollmentItem({ enrollment }: { enrollment: Enrollment }) {
         </div>
       </div>
 
-      <div className="text-xs text-muted-foreground">
-        <Clock className="mr-1 inline h-3 w-3" />
-        {enrollment.lastAccessedAt
-          ? new Date(enrollment.lastAccessedAt).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })
-          : 'Sin acceder'}
+      <div className="flex items-center gap-2">
+        <div className="text-xs text-muted-foreground">
+          <Clock className="mr-1 inline h-3 w-3" />
+          {enrollment.lastAccessedAt
+            ? new Date(enrollment.lastAccessedAt).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })
+            : 'Sin acceder'}
+        </div>
+        {isMoodleLegacy && enrollment.product.moodleCourseId ? (
+          <Button asChild size="sm" variant="outline" className="shrink-0">
+            <a href={`/api/moodle/autologin?courseId=${enrollment.product.moodleCourseId}`} target="_blank" rel="noopener noreferrer">
+              Continuar <ExternalLink className="ml-1 size-3" />
+            </a>
+          </Button>
+        ) : (
+          <Button asChild size="sm" variant="ghost" className="shrink-0">
+            <Link href={`/dashboard/cursos/${enrollment.product.slug}`}>
+              Continuar
+            </Link>
+          </Button>
+        )}
       </div>
-    </Link>
+    </div>
   );
 }
 

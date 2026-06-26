@@ -22,6 +22,11 @@ export type DashboardData = {
       slug: string;
       coverImageUrl: string | null;
       type: string;
+      moodleCourseId: number | null;
+      course: {
+        id: string;
+        contentSource: string;
+      } | null;
     };
   }[];
   certificates: {
@@ -65,6 +70,13 @@ export async function getDashboardData(): Promise<DashboardData> {
             slug: true,
             coverImageUrl: true,
             type: true,
+            moodleCourseId: true,
+            course: {
+              select: {
+                id: true,
+                contentSource: true,
+              },
+            },
           },
         },
       },
