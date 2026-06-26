@@ -73,6 +73,34 @@ export async function updateProfile(data: {
   return user;
 }
 
+export async function deleteAccount() {
+  const session = await getSession();
+  if (!session?.user) {
+    throw new Error('Se requiere autenticación');
+  }
+
+  const userId = session.user.id;
+
+  await prisma.$transaction([
+    prisma.lessonCompletion.deleteMany({ where: { userId } }),
+    prisma.quizAttempt.deleteMany({ where: { userId } }),
+    prisma.enrollment.deleteMany({ where: { userId } }),
+    prisma.certificate.deleteMany({ where: { userId } }),
+    prisma.vrKey.deleteMany({ where: { userId } }),
+    prisma.order.deleteMany({ where: { userId } }),
+    prisma.cart.deleteMany({ where: { userId } }),
+    prisma.calendarConnection.deleteMany({ where: { userId } }),
+    prisma.calendarEvent.deleteMany({ where: { userId } }),
+    prisma.employeeAssignment.deleteMany({ where: { userId } }),
+    prisma.review.deleteMany({ where: { userId } }),
+    prisma.session.deleteMany({ where: { userId } }),
+    prisma.account.deleteMany({ where: { userId } }),
+    prisma.user.delete({ where: { id: userId } }),
+  ]);
+
+  return { success: true };
+}
+
 export async function getOrderHistory() {
   const session = await getSession();
   if (!session?.user) {
@@ -80,7 +108,7 @@ export async function getOrderHistory() {
   }
 
   return prisma.order.findMany({
-    where: { userId: session.user.id, status: 'paid' },
+    where: { userId: session.user.id },
     include: {
       items: {
         include: {

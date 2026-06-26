@@ -1,11 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 import { getOrderHistory } from '@/lib/actions/checkout';
 import { Badge } from '@/components/ui/badge';
-import { Package, ExternalLink } from 'lucide-react';
+import { Package, ExternalLink, ShoppingCart } from 'lucide-react';
 import Link from 'next/link';
 
 interface OrderItem {
@@ -34,19 +33,16 @@ const statusConfig: Record<string, { label: string; variant: 'default' | 'second
   paid: { label: 'Pagada', variant: 'default' },
   failed: { label: 'Fallida', variant: 'destructive' },
   refunded: { label: 'Reembolsada', variant: 'outline' },
+  cancelled: { label: 'Cancelada', variant: 'destructive' },
 };
 
 export default function OrdersPage() {
-  const router = useRouter();
-  const { data: session } = authClient.useSession();
+  const { data: session, isPending } = authClient.useSession();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!session?.user) {
-      router.push('/sign-in?redirect_to=/orders');
-      return;
-    }
+    if (isPending) return;
 
     async function loadOrders() {
       try {
@@ -60,7 +56,7 @@ export default function OrdersPage() {
     }
 
     loadOrders();
-  }, [session, router]);
+  }, [isPending]);
 
   const formatPrice = (cents: number) =>
     new Intl.NumberFormat('es-CO', {
@@ -76,10 +72,30 @@ export default function OrdersPage() {
       day: 'numeric',
     });
 
-  if (loading) {
+  if (isPending || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-muted-foreground">Cargando historial...</p>
+      </div>
+    );
+  }
+
+  if (!session?.user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <ShoppingCart className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+          <h2 className="text-lg font-semibold mb-2">Inicia sesión para ver tu historial</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Necesitas estar autenticado para ver tus compras.
+          </p>
+          <Link
+            href="/sign-in?redirect_to=/orders"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90"
+          >
+            Iniciar sesión
+          </Link>
+        </div>
       </div>
     );
   }
@@ -137,7 +153,27 @@ export default function OrdersPage() {
                       href="/dashboard"
                       className="inline-flex items-center text-sm text-primary hover:underline"
                     >
-                      Ir a Mis Cursos
+                      Ir a Mi Aprendizaje
+                      <ExternalLink className="size-3 ml-1" />
+                    </Link>
+                  </div>
+                )}
+
+                {order.status === 'pending' && (
+                  <div className="mt-4 pt-4 border-t">
+                    <p className="text-sm text-muted-foreground">
+                      Tu pago está siendo procesado. Te notificaremos cuando se confirme.
+                    </p>
+                  </div>
+                )}
+
+                {(order.status === 'failed' || order.status === 'cancelled') && (
+                  <div className="mt-4 pt-4 border-t">
+                    <Link
+                      href="/productos"
+                      className="inline-flex items-center text-sm text-primary hover:underline"
+                    >
+                      Intentar de nuevo
                       <ExternalLink className="size-3 ml-1" />
                     </Link>
                   </div>

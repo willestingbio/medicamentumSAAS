@@ -271,13 +271,6 @@ export const NavBar = memo(function NavBar({ navigationItems, initialSession }: 
                       )}
                     </div>
                     <div className="py-1">
-                      <Link
-                        href="/dashboard"
-                        onClick={() => setDropdownOpen(false)}
-                        className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors duration-150 ease-out"
-                      >
-                        Mi dashboard
-                      </Link>
                       {isHospitalAdmin && (
                         <Link
                           href="/org/employees"
@@ -378,13 +371,6 @@ export const NavBar = memo(function NavBar({ navigationItems, initialSession }: 
                             </p>
                           )}
                         </div>
-                        <Link
-                          href="/dashboard"
-                          onClick={() => setMobileOpen(false)}
-                          className="block rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent transition-colors duration-150 ease-out"
-                        >
-                          Mi dashboard
-                        </Link>
                         {isHospitalAdmin && (
                           <Link
                             href="/org/employees"

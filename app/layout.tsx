@@ -35,7 +35,8 @@ const navigationItems: NavigationItem[] = [
   { name: 'Nosotros', href: '/', sectionId: 'nosotros' },
   { name: 'Ejemplos', href: '/', sectionId: 'ejemplos', showOn: 'landing' },
   { name: 'Blog', href: '/', sectionId: 'blog', showOn: 'landing' },
-  { name: 'Marketplace', href: '/productos' },
+  { name: 'Mi Aprendizaje', href: '/dashboard', showOn: 'authenticated' },
+  { name: 'Productos', href: '/productos' },
 ];
 
 const jsonLd = {

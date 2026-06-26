@@ -7,9 +7,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { User, Palette, ShoppingBag, Save, Loader2 } from 'lucide-react';
+import { User, Palette, ShoppingBag, Save, Loader2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { updateProfile } from '@/lib/actions/profile';
+import { updateProfile, deleteAccount } from '@/lib/actions/profile';
+import { signOut } from '@/lib/auth-client';
 
 type Profile = {
   id: string;
@@ -26,6 +27,9 @@ type Profile = {
 export function SettingsContent({ profile }: { profile: Profile }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [form, setForm] = useState({
     name: profile?.name ?? '',
     lastName: profile?.lastName ?? '',
@@ -48,6 +52,21 @@ export function SettingsContent({ profile }: { profile: Profile }) {
       toast.error('Error al actualizar el perfil');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (confirmText !== 'ELIMINAR') return;
+    setDeleting(true);
+    try {
+      await deleteAccount();
+      await signOut();
+      toast.success('Cuenta eliminada correctamente');
+      window.location.href = '/';
+    } catch {
+      toast.error('Error al eliminar la cuenta');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -189,13 +208,57 @@ export function SettingsContent({ profile }: { profile: Profile }) {
           <CardHeader className="flex flex-row items-center gap-2">
             <CardTitle className="text-lg text-destructive">Zona de peligro</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Eliminar tu cuenta es una accion permanente e irreversible.
+              Eliminar tu cuenta es una acción permanente e irreversible. Se borrarán todos tus datos, cursos inscritos, certificados y compras.
             </p>
-            <Button variant="destructive" size="sm" className="mt-3" disabled>
-              Eliminar cuenta
-            </Button>
+            {!showDeleteConfirm ? (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setShowDeleteConfirm(true)}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Eliminar cuenta
+              </Button>
+            ) : (
+              <div className="space-y-3 rounded-md border border-destructive/50 p-4">
+                <p className="text-sm text-destructive font-medium">
+                  Escribe <span className="font-bold">ELIMINAR</span> para confirmar:
+                </p>
+                <Input
+                  value={confirmText}
+                  onChange={(e) => setConfirmText(e.target.value)}
+                  placeholder="ELIMINAR"
+                  className="border-destructive/50 focus-visible:ring-destructive"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={confirmText !== 'ELIMINAR' || deleting}
+                    onClick={handleDeleteAccount}
+                  >
+                    {deleting ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="mr-2 h-4 w-4" />
+                    )}
+                    Sí, eliminar mi cuenta
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setShowDeleteConfirm(false);
+                      setConfirmText('');
+                    }}
+                  >
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
