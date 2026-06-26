@@ -11,6 +11,7 @@ import { User, Palette, ShoppingBag, Save, Loader2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner';
 import { updateProfile, deleteAccount } from '@/lib/actions/profile';
 import { signOut } from '@/lib/auth-client';
+import { useColorMode } from '@/hooks/useColorMode';
 
 type Profile = {
   id: string;
@@ -26,6 +27,7 @@ type Profile = {
 
 export function SettingsContent({ profile }: { profile: Profile }) {
   const router = useRouter();
+  const [, setColorMode] = useColorMode();
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmText, setConfirmText] = useState('');
@@ -36,6 +38,16 @@ export function SettingsContent({ profile }: { profile: Profile }) {
     specialty: profile?.specialty ?? '',
     theme: profile?.theme ?? 'system',
   });
+
+  const handleThemeChange = (theme: string) => {
+    setForm({ ...form, theme });
+    if (theme === 'system') {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      setColorMode(prefersDark ? 'dark' : 'light');
+    } else {
+      setColorMode(theme as 'light' | 'dark');
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -174,7 +186,7 @@ export function SettingsContent({ profile }: { profile: Profile }) {
                     key={option.value}
                     variant={form.theme === option.value ? 'default' : 'outline'}
                     size="sm"
-                    onClick={() => setForm({ ...form, theme: option.value })}
+                    onClick={() => handleThemeChange(option.value)}
                   >
                     {option.label}
                   </Button>
