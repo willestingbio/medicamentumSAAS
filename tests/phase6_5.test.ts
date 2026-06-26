@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Pure business-logic functions extracted from the codebase for unit testing.
@@ -216,7 +216,6 @@ function shouldProcessVideoEvent(
   event: VideoEvent,
   processedEvents: ProcessedEvents,
 ): boolean {
-  const eventKey = `${event.uid}:${event.status}`;
   const uidEvents = processedEvents.get(event.uid);
 
   if (uidEvents && uidEvents.has(event.status)) {
