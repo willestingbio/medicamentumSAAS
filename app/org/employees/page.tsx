@@ -108,7 +108,7 @@ export default function OrgEmployeesPage() {
     authClient.getSession().then((s) => {
       const sessionData = s as any;
       if (!sessionData?.user) {
-        router.push('/sign-in');
+        router.push('/sign-in?redirect_to=/org/employees');
         return;
       }
       const role = sessionData.user.role;

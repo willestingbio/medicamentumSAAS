@@ -4,10 +4,11 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { authClient } from '@/lib/auth-client';
 import { checkRateLimit } from '@/lib/rate-limit';
+import { mergeGuestCart } from '@/lib/actions/cart';
+import { getGuestToken, clearGuestToken } from '@/lib/guest';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,12 +16,12 @@ import { Label } from '@/components/ui/label';
 const signInSchema = z.object({
   email: z.string().email('Correo electrónico inválido'),
   password: z.string().min(1, 'La contraseña es requerida'),
+  rememberMe: z.boolean(),
 });
 
 type SignInForm = z.infer<typeof signInSchema>;
 
 export default function SignInPage() {
-  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -30,6 +31,9 @@ export default function SignInPage() {
     formState: { errors },
   } = useForm<SignInForm>({
     resolver: zodResolver(signInSchema),
+    defaultValues: {
+      rememberMe: false,
+    },
   });
 
   const onSubmit = async (data: SignInForm) => {
@@ -44,13 +48,24 @@ export default function SignInPage() {
       const { error: authError } = await authClient.signIn.email({
         email: data.email,
         password: data.password,
+        rememberMe: data.rememberMe,
       });
       if (authError) {
         setError(authError.message || 'Credenciales inválidas');
         return;
       }
-      router.push('/');
-      router.refresh();
+      // Merge guest cart into user cart before redirect
+      try {
+        const gt = getGuestToken();
+        if (gt) {
+          await mergeGuestCart(gt);
+          clearGuestToken();
+        }
+      } catch {
+        // Best-effort — don't block login if merge fails
+      }
+      const redirectTo = new URLSearchParams(window.location.search).get('redirect_to') || '/';
+      window.location.href = redirectTo;
     } catch {
       setError('Error de conexión. Intenta de nuevo.');
     } finally {
@@ -114,6 +129,18 @@ export default function SignInPage() {
           {errors.password && (
             <p className="text-xs text-destructive">{errors.password.message}</p>
           )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <input
+            id="rememberMe"
+            type="checkbox"
+            className="size-4 rounded border-input accent-primary"
+            {...register('rememberMe')}
+          />
+          <Label htmlFor="rememberMe" className="text-sm font-normal text-muted-foreground">
+            Mantener sesión iniciada
+          </Label>
         </div>
 
         <Button type="submit" className="w-full btn-press" disabled={loading}>

@@ -9,7 +9,9 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { authClient, signOut } from '@/lib/auth-client';
 import { throttleWithTrailingInvocation } from '@/lib/throttle';
 import { cn } from '@/lib/utils';
+import { getGuestToken } from '@/lib/guest';
 import { DarkModeSwitcher } from './DarkModeSwitcher';
+import { CartPopover } from '@/components/cart/CartPopover';
 
 export interface NavigationItem {
   name: string;
@@ -37,9 +39,19 @@ function UserAvatar({ user }: { user: { name: string; image?: string | null } })
 
 interface NavBarProps {
   navigationItems: NavigationItem[];
+  initialSession?: {
+    user: {
+      id: string;
+      name: string;
+      email: string;
+      image?: string | null;
+      role?: string;
+      organizationId?: string | null;
+    };
+  } | null;
 }
 
-export const NavBar = memo(function NavBar({ navigationItems }: NavBarProps) {
+export const NavBar = memo(function NavBar({ navigationItems, initialSession }: NavBarProps) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isHidden, setIsHidden] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -52,11 +64,19 @@ export const NavBar = memo(function NavBar({ navigationItems }: NavBarProps) {
   const isLanding = pathname === '/';
   const isMarketplace = pathname.startsWith('/productos');
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
-  const { data: session } = authClient.useSession();
+  const { data: clientSession } = authClient.useSession();
+
+  // Derive session directly: use initialSession while client is loading, then use client result
+  const session = clientSession !== undefined ? clientSession ?? null : initialSession ?? null;
 
   const userRole = (session?.user as any)?.role;
   const isHospitalAdmin = userRole === 'hospital_admin' || userRole === 'super_admin';
   const isSuperAdmin = userRole === 'super_admin';
+  const [guestToken, setGuestToken] = useState('');
+
+  useEffect(() => {
+    setGuestToken(getGuestToken());
+  }, []);
 
   useEffect(() => {
     const throttled = throttleWithTrailingInvocation(() => {
@@ -129,7 +149,7 @@ export const NavBar = memo(function NavBar({ navigationItems }: NavBarProps) {
     const isLandingSection = item.sectionId && isLanding;
 
     return (
-      <li key={item.name}>
+      <li key={item.name} className="relative">
         <a
           href={isLandingSection ? `#${item.sectionId}` : item.href}
           onClick={(e) => {
@@ -139,12 +159,12 @@ export const NavBar = memo(function NavBar({ navigationItems }: NavBarProps) {
             }
           }}
           className={cn(
-            "text-sm font-normal transition-colors duration-200 ease-out hover:text-primary cursor-pointer relative group px-2 py-1",
+            "text-sm font-normal transition-all duration-300 ease-out hover:text-primary cursor-pointer relative group px-3 py-1.5 rounded-md hover:bg-accent/50",
             isActive ? "text-primary font-medium" : "text-foreground"
           )}
         >
           {item.name}
-          <span className="absolute -bottom-1 left-2 right-2 h-0.5 bg-primary scale-x-0 transition-transform duration-300 ease-out origin-left group-hover:scale-x-100" />
+          <span className="absolute -bottom-1 left-3 right-3 h-0.5 bg-primary scale-x-0 transition-transform duration-300 ease-out origin-left group-hover:scale-x-100" />
         </a>
       </li>
     );
@@ -191,7 +211,7 @@ export const NavBar = memo(function NavBar({ navigationItems }: NavBarProps) {
           {/* Search bar — only on marketplace, expands on hover */}
           {isMarketplace && (
             <div className="hidden lg:flex items-center mx-4 flex-1 group/search">
-              <div className="relative flex items-center w-full max-w-[180px] group-focus-within/search:max-w-none transition-all duration-300 ease-out">
+              <div className="relative flex items-center w-full max-w-[180px] group-hover/search:max-w-[320px] group-focus-within/search:max-w-[320px] transition-all duration-300 ease-out">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
                 <input
                   type="text"
@@ -220,6 +240,7 @@ export const NavBar = memo(function NavBar({ navigationItems }: NavBarProps) {
 
           {/* Desktop User Area */}
           <div className="hidden lg:flex items-center gap-3">
+            <CartPopover guestToken={guestToken || undefined} />
             <DarkModeSwitcher />
 
             {session?.user ? (
@@ -303,6 +324,7 @@ export const NavBar = memo(function NavBar({ navigationItems }: NavBarProps) {
 
           {/* Mobile Menu */}
           <div className="flex lg:hidden items-center gap-2">
+            <CartPopover guestToken={guestToken || undefined} />
             <DarkModeSwitcher />
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
               <SheetTrigger asChild>

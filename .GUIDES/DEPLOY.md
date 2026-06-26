@@ -1,9 +1,11 @@
 # DEPLOY.md — Medicamentum360
 **Infraestructura VPS — Guía de despliegue y operaciones**
-Versión: 1.0 · Fecha: 2026-06-22
+Versión: 2.0 · Fecha: 2026-06-24
 
 > Este documento reemplaza toda referencia a Vercel e InsForge como plataforma de hosting.
 > El stack de infraestructura es ahora: **VPS propio + Docker Compose + Nginx + Let's Encrypt + Postgres gestionado propio o managed (Neon/Supabase/Railway)**.
+>
+> **Cambio v2.0:** se añade **Cloudflare Stream** como pieza de infraestructura para el video del Course Builder (`TRD.md §19.4`) y las variables de entorno del marketplace multi-vendor (`TRD.md §20`). Se añade además **§16 — Protocolo de manejo seguro de `.env*` en el VPS**, que complementa (no sustituye) la regla de comportamiento del agente ya definida en `AGENTS.md §2.5`.
 
 ---
 
@@ -425,6 +427,18 @@ BREVO_API_KEY=...
 
 # Brand
 NEXT_PUBLIC_BRAND_COLOR=#8127cf
+
+# Cloudflare Stream — video de lecciones del Course Builder (nuevo, ver TRD.md §19.4)
+CLOUDFLARE_STREAM_ACCOUNT_ID=...
+CLOUDFLARE_STREAM_API_TOKEN=...
+CLOUDFLARE_STREAM_SIGNING_KEY_ID=...
+CLOUDFLARE_STREAM_SIGNING_KEY_PEM=...
+CLOUDFLARE_STREAM_WEBHOOK_SECRET=...  # para verificar la firma del webhook entrante
+
+# Marketplace multi-vendor (nuevo, ver TRD.md §20)
+MARKETPLACE_COMMISSION_PCT=20
+WOMPI_VENDOR_PAYOUT_KEY=...           # credencial separada de la de cobro a estudiantes
+VENDOR_BANK_ENCRYPTION_KEY=<genera-con-openssl-rand-base64-32 — DISTINTA de BETTER_AUTH_SECRET>
 ```
 
 **Generar secretos seguros:**
@@ -432,6 +446,8 @@ NEXT_PUBLIC_BRAND_COLOR=#8127cf
 # En el VPS, genera cada secreto así:
 openssl rand -base64 32
 ```
+
+**Importante — esta lista es de referencia, no un script para ejecutar sobre tu `.env.production` real.** Si ya tienes un `.env.production` en el VPS con valores reales puestos, **no lo regeneres ni lo sobrescribas con este bloque.** Añade únicamente las variables nuevas que todavía no existan, una por una, conservando todo lo demás intacto. Ver §16 para el procedimiento seguro completo.
 
 ---
 
@@ -766,3 +782,43 @@ docker exec -i medicamentum_postgres psql -U medicamentum -d medicamentum360 < m
 - [ ] RLS isolation test pasado (ver `tests/rls-isolation-test.sql`)
 - [ ] Test de idempotencia webhook Wompi pasado
 - [ ] `MOODLE_WS_TOKEN` solo en variables de servidor (no en `NEXT_PUBLIC_*`)
+- [ ] Cloudflare Stream configurado con `requireSignedURLs: true` y `allowedOrigins` restringido al dominio real (§16.4 / `TRD.md §19.4`)
+- [ ] Webhook `POST /api/webhooks/cloudflare-stream` verifica la firma (`CLOUDFLARE_STREAM_WEBHOOK_SECRET`) antes de procesar
+- [ ] `VENDOR_BANK_ENCRYPTION_KEY` generada y distinta de `BETTER_AUTH_SECRET`
+- [ ] `WOMPI_VENDOR_PAYOUT_KEY` es una credencial separada de la usada para cobros a estudiantes
+- [ ] Antes de cualquier despliegue de la Fase 6.5, verificado que ningún script de CI/CD ni comando de deploy sobrescribe `.env.production` (§16)
+
+---
+
+## 16. Protocolo de manejo seguro de `.env*` en el VPS
+
+> Esta sección es la contraparte de infraestructura de `AGENTS.md §2.5`. Esa sección le dice al agente cómo comportarse al editar archivos; esta sección documenta el procedimiento operativo correcto para humanos y scripts de CI/CD trabajando contra el VPS real, donde el costo de un error es mayor (es el entorno de producción, no un repo local).
+
+### 16.1 Por qué esto es crítico en este proyecto en particular
+
+`/opt/medicamentum360/.env.production` vive **fuera del repositorio Git** por diseño (`AGENTS.md §3`) — es la única copia de credenciales reales de producción: claves de Wompi, tokens de Moodle, secretos de Better Auth, y ahora también credenciales de Cloudflare Stream y de payout a vendors. No hay backup automático de este archivo específico salvo que se configure explícitamente (ver §16.3). Perderlo significa regenerar manualmente cada credencial desde cada proveedor — horas de trabajo evitables.
+
+### 16.2 Reglas para añadir una variable nueva en producción
+
+1. **Nunca** ejecutes `scp .env.production.example .env.production` ni ningún comando que sobrescriba el archivo completo si ya existe.
+2. Conéctate por SSH y edita con un editor de líneas (`nano`, `vim`) o usa `echo "VARIABLE=valor" >> .env.production` (con doble `>>`, **append**, nunca `>` simple que truncaría el archivo).
+3. Verifica después de cada cambio: `cat .env.production | grep VARIABLE_NUEVA` para confirmar que se añadió sin tocar el resto.
+4. Reinicia solo el contenedor de la app para que tome las variables nuevas: `docker compose restart app` (no `docker compose down -v`, que además borraría volúmenes si se usa mal).
+
+### 16.3 Backup del `.env.production`
+
+Dado que no vive en Git, se recomienda (decisión del equipo, no automatizado por defecto) mantener una copia cifrada fuera del VPS — por ejemplo, en un gestor de secretos (1Password, Bitwarden) o cifrada con `age`/`gpg` en un repositorio privado separado dedicado solo a secretos. **El agente no gestiona este backup ni lo automatiza sin que el humano lo pida explícitamente** — es una decisión operativa del equipo, no una tarea de desarrollo.
+
+### 16.4 Variables nuevas de esta versión (v2.0) — checklist de qué añadir, no de qué sobrescribir
+
+Si vienes de una v1.0 del `.env.production` y necesitas habilitar el Course Builder/marketplace, **añade únicamente estas líneas nuevas** (vía append, §16.2) — todo lo demás en tu archivo actual permanece intacto:
+```env
+CLOUDFLARE_STREAM_ACCOUNT_ID=...
+CLOUDFLARE_STREAM_API_TOKEN=...
+CLOUDFLARE_STREAM_SIGNING_KEY_ID=...
+CLOUDFLARE_STREAM_SIGNING_KEY_PEM=...
+CLOUDFLARE_STREAM_WEBHOOK_SECRET=...
+MARKETPLACE_COMMISSION_PCT=20
+WOMPI_VENDOR_PAYOUT_KEY=...
+VENDOR_BANK_ENCRYPTION_KEY=...
+```

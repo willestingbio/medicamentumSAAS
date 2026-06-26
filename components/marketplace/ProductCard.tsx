@@ -1,7 +1,14 @@
+'use client';
+
 import Link from 'next/link';
+import { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
-import { Star, Users, ShoppingCart } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Star, Users, ShoppingCart, Check } from 'lucide-react';
+import { cn, formatPrice } from '@/lib/utils';
+import { addToCart } from '@/lib/actions/cart';
+import { incrementCartCount } from '@/components/cart/CartPopover';
+import { getGuestToken } from '@/lib/guest';
+import { toast } from 'sonner';
 
 interface Product {
   id: string;
@@ -52,12 +59,33 @@ function StarRating({ rating, count }: { rating: number; count: number }) {
   );
 }
 
-export function ProductCard({ product, formatPrice }: {
+export function ProductCard({ product }: {
   product: Product;
-  formatPrice: (cents: number) => string;
 }) {
   const badge = getTypeBadge(product.type);
   const hasDiscount = product.discountCents !== null && product.discountCents < product.priceCents;
+  const [adding, setAdding] = useState(false);
+  const [added, setAdded] = useState(false);
+
+  const handleAddToCart = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (adding || added) return;
+
+    setAdding(true);
+    try {
+      await addToCart(product.id, getGuestToken());
+      incrementCartCount();
+      window.dispatchEvent(new Event('cart-updated'));
+      setAdded(true);
+      toast.success('Agregado al carrito');
+      setTimeout(() => setAdded(false), 2000);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Error al agregar');
+    } finally {
+      setAdding(false);
+    }
+  };
 
   return (
     <Link href={`/productos/${product.slug}`}>
@@ -108,14 +136,17 @@ export function ProductCard({ product, formatPrice }: {
               )}
             </div>
             <button
-              className="size-9 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary hover:text-primary-foreground transition-all duration-200 group-hover:scale-110"
+              className={cn(
+                "size-9 rounded-full flex items-center justify-center transition-all duration-200 group-hover:scale-110",
+                added
+                  ? "bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400"
+                  : "bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground"
+              )}
               aria-label={`Agregar ${product.title} al carrito`}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
+              onClick={handleAddToCart}
+              disabled={adding}
             >
-              <ShoppingCart className="size-4" />
+              {added ? <Check className="size-4" /> : <ShoppingCart className="size-4" />}
             </button>
           </div>
         </CardContent>

@@ -1,13 +1,16 @@
 # PLAN — Medicamentum360
-**Plan de desarrollo fasado — v3.0 (VPS Edition)**
-Versión: 3.0 · Fecha: 2026-06-22 · Reemplaza v2.1
+**Plan de desarrollo fasado — v4.0 (Creator Suite Edition)**
+Versión: 4.0 · Fecha: 2026-06-24 · Reemplaza v3.0
+
+> **Cambio v4.0 vs v3.0:** se añade la **Fase 6.5 — Course Builder & Marketplace Multi-Vendor**, entre la Fase 6 (Integración Moodle) y la Fase 7 (Panel de Organización). Esta fase introduce el creador de cursos propio (módulos, lecciones, video con Cloudflare Stream, quizzes, certificación automática) y la apertura del marketplace a vendedores externos (instructores y estudios VR) con revisión editorial y payouts. La Fase 6 se ajusta para reflejar que Moodle pasa a ser un motor de inscripción/SSO, no el lugar donde vive el contenido — ver `TRD.md §19.1` para el detalle de por qué. El resto de fases (1-5, 7-13) permanecen funcionalmente iguales a v3.0.
 
 > **Cambio v3.0 vs v2.1:** se reemplaza toda la infraestructura de Vercel + InsForge por **VPS propio con Docker Compose**. Los cambios afectan principalmente la Fase 2.5 (CI/CD) y el §0. Las fases de producto (1–13) permanecen idénticas en funcionalidad. Ver `DEPLOY.md` para la guía completa de infraestructura VPS.
 
 ---
 
-## §0. Cambios respecto a v2.1
+## §0. Cambios respecto a v3.0 (este documento) / v2.1 (heredados)
 
+0. **Nuevo en v4.0 — Fase 6.5 (Course Builder & Marketplace Multi-Vendor):** ver la fase completa más abajo. Resumen: el contenido de los cursos (módulos/lecciones/video/quizzes) pasa a vivir en Postgres propio en vez de en Moodle, porque la Web Service API de Moodle no soporta crear ese contenido por API (`TRD.md §19.1` — verificado contra documentación oficial). El video usa Cloudflare Stream. El marketplace se abre a vendedores externos con comisión y payout.
 1. **InsForge eliminado.** `@insforge/sdk`, `npx @insforge/cli`, y el pooler de InsForge ya no existen en este proyecto. Postgres corre en Docker en el VPS con acceso TCP directo. Storage es Cloudflare R2 (SDK S3-compatible). Ver `AGENTS.md §6.5` para la tabla de equivalencias completa.
 2. **Vercel eliminado.** El despliegue es a VPS via GitHub Actions + SSH. El CI/CD de Fase 2.5 se actualizó en consecuencia.
 3. **`next.config.js` requiere `output: 'standalone'`** para que el build Next.js funcione en Docker.
@@ -100,18 +103,20 @@ Versión: 3.0 · Fecha: 2026-06-22 · Reemplaza v2.1
 
 ---
 
-## Fase 4 — Carrito, Checkout y Órdenes (Wompi)
+## Fase 4 — Carrito, Checkout y Órdenes (Wompi) — ✅ COMPLETA
 
-**Bloqueante:** Fase 2.5 completa (VPS funcionando con RLS validado en CI).
+> **Nota de orden (señalada, no resuelta en silencio):** esta fase se completó en desarrollo local antes de que la Fase 2.5 terminara su parte de VPS real (provisión del servidor, SSL, secrets en GitHub siguen pendientes — ver `PROGRESS.md` Fase 2.5). No bloquea el trabajo de código, pero el webhook de Wompi con HMAC+idempotencia solo puede probarse de extremo a extremo, con tráfico público real, una vez el VPS esté provisionado y el dominio tenga HTTPS. Hasta entonces, lo construido se valida con los 10/10 tests unitarios reportados en `PROGRESS.md`, no con un webhook real recibido desde Wompi.
 
-- [ ] Carrito popover (persistencia guest + merge al login).
-- [ ] Checkout con datos DIAN (NIT/CC), widget Wompi embebido.
-- [ ] Webhook con HMAC + idempotencia (`/api/webhooks/wompi`).
-  - **Nota VPS:** registrar el webhook en Wompi con el dominio real del VPS: `https://medicamentum360.com/api/webhooks/wompi`
-- [ ] Pantalla de éxito + email de confirmación (Brevo).
-- [ ] Cupones/descuentos.
-- [ ] Tabla `employee_assignments`.
-- [ ] Historial de órdenes (`/orders`).
+*(Detalle completo de lo implementado en `PROGRESS.md` Fase 4.)*
+
+- [x] Carrito popover (persistencia guest + merge al login).
+- [x] Checkout con datos DIAN (NIT/CC), widget Wompi embebido (Checkout Brick).
+- [x] Webhook con HMAC + idempotencia (`/api/webhooks/wompi`) — validado con tests unitarios, pendiente de validación end-to-end contra Wompi real en producción.
+  - **Nota VPS:** registrar el webhook en Wompi con el dominio real del VPS: `https://medicamentum360.com/api/webhooks/wompi` — pendiente hasta que el VPS esté provisionado.
+- [x] Pantalla de éxito + email de confirmación (Brevo).
+- [x] Tabla `employee_assignments` (schema Prisma).
+- [x] Historial de órdenes (`/orders`).
+- [ ] Cupones/descuentos — modelo `Coupon` ya está en el schema Prisma (ver `PROGRESS.md` Fase 4), pero la UI/lógica de aplicar un cupón en checkout no se reportó como implementada; verificar antes de marcar este ítem.
 
 ---
 
@@ -127,11 +132,71 @@ Versión: 3.0 · Fecha: 2026-06-22 · Reemplaza v2.1
 
 ## Fase 6 — Integración Moodle
 
-- [ ] API REST: catálogo, progreso, calificaciones.
-- [ ] Inscripción automática post-pago vía webhook de Wompi.
-- [ ] SSO/autologin para "Continuar curso".
-- [ ] Sync de notas vía cron (Inngest o cron job Docker).
+> **Alcance ajustado en v4.0:** la API REST de Moodle no soporta crear secciones/recursos/quizzes por webservice (`TRD.md §19.1`). Esta fase se limita a lo que la API sí soporta: inscripción, SSO y sync de notas para cursos legacy. La creación de contenido pedagógico vive en la Fase 6.5 (Course Builder propio), que es independiente de Moodle.
+
+- [ ] API REST: catálogo (solo metadatos de curso), progreso/calificaciones de cursos `contentSource: moodle_legacy`.
+- [ ] Inscripción automática post-pago vía webhook de Wompi (`enrol_manual_enrol_users`) — aplica a todo curso, sea `native` o `moodle_legacy`.
+- [ ] SSO/autologin para "Continuar curso" — solo para cursos `contentSource: moodle_legacy`.
+- [ ] Sync de notas vía cron (Inngest o cron job Docker) — solo para cursos `contentSource: moodle_legacy`.
 - [ ] Desarrollar/probar todo contra Moodle local de `docker/`.
+
+---
+
+## Fase 6.5 — Course Builder & Marketplace Multi-Vendor (NUEVO en v4.0)
+
+**Bloqueante:** ✅ Fase 4 completa (ver `PROGRESS.md`) · Fase 5 completa (dashboard del estudiante, donde vive el reproductor de lección) — **único bloqueante restante**. El Course Builder en sí (creación de cursos, módulos, lecciones) no depende de Fase 5; lo que sí depende es el flujo de consumo del estudiante (§3.10 de `UX_UI.md`), porque vive dentro del dashboard. Si se quiere, el equipo puede empezar el Course Builder (creación) en paralelo a la Fase 5, y dejar el reproductor de lección para cuando ambas converjan.
+
+**Por qué esta fase importa para el negocio:** hoy la plataforma depende de que alguien cree el contenido manualmente dentro de Moodle, fuera de Medicamentum360. Eso no escala si la idea es que muchas personas — instructores médicos, hospitales aliados, estudios de VR — puedan publicar contenido propio. Esta fase resuelve ambos problemas a la vez: da una herramienta de creación de cursos completa dentro de la propia plataforma, y abre la puerta a que terceros vendan en el marketplace, con Medicamentum360 cobrando una comisión por cada venta — un segundo motor de ingresos además de la venta directa.
+
+### Modelo de datos y arquitectura (ver `TRD.md §19-20` para el detalle completo)
+- [ ] Migración Prisma: `Course`, `Module`, `Lesson`, `Quiz`, `QuizQuestion`, `QuizOption`, `QuizAttempt`, `LessonCompletion`.
+- [ ] Migración Prisma: `Vendor`, `Payout`; campos nuevos en `Product` (`vendorId`, `reviewStatus`); campo nuevo en `Course`/`Product` (`contentSource`).
+- [ ] Policies RLS para cada tabla nueva (`TRD.md §19.3`) — contar y documentar el total en `PROGRESS.md` al implementarlas.
+- [ ] Cuenta de Cloudflare Stream creada, variables de entorno documentadas (`DEPLOY.md §16.4`) — **recordar siempre añadirlas vía append, nunca sobrescribiendo `.env.production`** (`AGENTS.md §2.5`, `DEPLOY.md §16`).
+
+### Course Builder — creación de contenido
+- [ ] Panel `/instructor` — listado de cursos propios con estado (borrador/publicado/en revisión).
+- [ ] Editor de curso `/instructor/courses/[id]` — layout de 3 columnas (`UX_UI.md §3.11`).
+- [ ] CRUD de módulos con reordenamiento drag & drop accesible por teclado (`FRONTEND_PATTERNS.md §10.1`).
+- [ ] CRUD de lecciones (video/texto/quiz/recurso) con reordenamiento.
+- [ ] Drip content por módulo (`releaseAfterDays`).
+- [ ] Subida de video vía Cloudflare Stream Direct Upload (`BACKEND.md §16`) + webhook de confirmación.
+- [ ] Editor de quiz: preguntas de opción única/múltiple/verdadero-falso, explicación post-respuesta, configuración de intentos/tiempo límite.
+- [ ] Lecciones marcables como "vista previa" (`isPreview`) — visibles gratis en el detalle de producto.
+- [ ] Validaciones bloqueantes antes de publicar/enviar a revisión (módulo vacío, video no listo, quiz sin pregunta correcta).
+
+### Consumo del curso — estudiante
+- [ ] Reproductor de lección (`/dashboard/cursos/[slug]/[leccionId]`) con reproducción HLS firmada (`hls.js`).
+- [ ] Marcado de lección completada (automático al 90% del video, o manual para texto/recurso).
+- [ ] Cálculo de `Enrollment.progressPct` en tiempo real, sin cron.
+- [ ] Componente de Quiz para el estudiante + pantalla de resultado con revisión por pregunta.
+- [ ] Certificación automática al completar el curso (reutiliza `lib/actions/certificates.ts` ya existente, sin esperar sync con Moodle).
+
+### Marketplace Multi-Vendor
+- [ ] Onboarding de vendor (`/vender`) — registro, KYC, datos bancarios cifrados (`BACKEND.md §18.1`).
+- [ ] Aprobación de vendor por `super_admin`.
+- [ ] Creación de producto (curso o VR) por vendor, con scoping automático a su `vendorId`.
+- [ ] Flujo de envío a revisión (`reviewStatus: pending_review`) en vez de publicación directa.
+- [ ] Bandeja `/admin/review-queue` — aprobar/rechazar productos de vendor con vista previa real y motivo de rechazo obligatorio.
+- [ ] Atribución de vendor en marketplace (`VendorBadge`, página `/marketplace/creador/[vendorSlug]`).
+- [ ] Cron de generación de payouts mensuales (`generateMonthlyPayoutBatch`).
+- [ ] Panel `/admin/payouts` — revisión y aprobación manual del lote antes de disparar transferencias reales (punto de parada obligatorio, `AGENTS.md §8`).
+- [ ] Historial de payouts para el propio vendor (solo lectura).
+- [ ] Flujo de suspensión de vendor (despublicación automática de su catálogo, acceso ya comprado se mantiene).
+
+### Testing específico de esta fase
+- [ ] Test de que un `vendor` no puede editar el `Course` de otro `vendor` (ownership, no solo rol).
+- [ ] Test de que ningún producto de `vendor` llega a `published: true` sin `reviewStatus: approved`.
+- [ ] Test de idempotencia del webhook de Cloudflare Stream (mismo evento dos veces no duplica el estado de la lección).
+- [ ] Test de que `bankAccountInfo` nunca se devuelve en texto plano desde ninguna Server Action de lectura.
+- [ ] Test de cálculo de payout: bruto - comisión = neto, con casos de comisión personalizada por vendor.
+- [ ] Test E2E (Playwright): flujo completo crear curso → publicar → comprar → consumir lección → aprobar quiz → obtener certificado.
+
+### Criterios de aceptación para marcar esta fase completa
+- Un `super_admin` puede crear un curso completo (mínimo 1 módulo, 1 lección de video, 1 quiz) sin tocar Moodle en ningún paso.
+- Un usuario puede registrarse como vendor, ser aprobado, crear un producto, enviarlo a revisión, y verlo publicado tras aprobación — flujo completo de punta a punta.
+- El video se reproduce solo con token firmado vigente; un intento de acceder al manifiesto HLS sin token válido falla.
+- El payout de un periodo de prueba calcula correctamente bruto/comisión/neto y queda en estado `pending` hasta aprobación manual — ninguna transferencia real se dispara automáticamente.
 
 ---
 
@@ -145,8 +210,9 @@ Versión: 3.0 · Fecha: 2026-06-22 · Reemplaza v2.1
 
 - [ ] CRUD de productos: crear curso, subir modelo 3D (upload a Cloudflare R2 `vr-assets/`).
 - [ ] Gestión de hospitales/organizaciones.
+- [ ] Gestión de vendors: aprobación de KYC, suspensión, ajuste de comisión individual (extiende la Fase 6.5).
 - [ ] Panel de seguridad.
-- [ ] Audit log de actividad administrativa.
+- [ ] Audit log de actividad administrativa — incluye aprobaciones/rechazos de productos de vendor y lotes de payout aprobados.
 
 ---
 
@@ -196,17 +262,27 @@ Añadir a las desviaciones ya documentadas en v2.1 §12:
 10. **Bridge JWT `/api/insforge-token` eliminado** — ya no necesario.
 11. **Archivos obsoletos eliminados del repo:** `vercel.json`, `insforge.toml`, `.insforge/`, `.vercel/`, `app/api/debug/`.
 12. **`lib/prisma.ts` usa `pg.Pool({ max: 10 })`** — control explícito de conexiones a Postgres.
+13. **Moodle deja de ser el motor de contenido del curso (v4.0):** la Web Service API no soporta crear secciones/recursos/quizzes por API (verificado, ver `TRD.md §19.1`). El contenido vive en Postgres propio desde la Fase 6.5; Moodle queda como motor de inscripción/SSO para cursos legacy.
+14. **El marketplace deja de ser de un solo vendedor (v4.0):** `Product` gana `vendorId` opcional y `reviewStatus`. Todo producto de terceros pasa por revisión editorial antes de publicarse — ver `TRD.md §20.4`.
 
 ---
 
 ## Matriz de dependencias
 
 ```
-Fase 1 ──► Fase 2 ──► Fase 2.5 (VPS) ──► Fase 3 ──► Fase 4 ──► Fase 5 ──┬─► Fase 6
+Fase 1✅ ──► Fase 2✅ ──► Fase 2.5~ (VPS, falta provisión real) ──► Fase 3✅ ──► Fase 4✅ ──► Fase 5 ──┬─► Fase 6
                           │                              │                │
                           │ (bloquea pagos reales)       │                ▼
-                          └──────────────────────────────┘            Fase 7 ──► Fase 8 ──► ... ──► Fase 13
+                          └──────────────────────────────┘            Fase 6.5 (Course Builder
+                                                                        + Marketplace Multi-Vendor)
+                                                                              │
+                                                                              ▼
+                                                                          Fase 7 ──► Fase 8 ──► ... ──► Fase 13
 ```
+
+**Estado real (2026-06-25, ver `PROGRESS.md`):** Fases 1-4 completas en desarrollo local. Fase 2.5 sigue `~EN PROGRESO` porque el VPS real (provisión, SSL, secrets de GitHub) no se ha hecho aún — esto es una desviación de orden aceptada, no bloqueante para seguir codificando, pero **sí bloqueante para cualquier prueba de pagos reales o webhook de Wompi recibido desde producción** (ver nota en la Fase 4 más arriba). Próximo paso lógico: Fase 5 (Dashboard del Estudiante), que desbloquea por completo la Fase 6.5.
+
+**Nota:** la Fase 6.5 depende de Fase 4 (✅ ya completa) y Fase 5 (no de la Fase 6 de Moodle) — puede desarrollarse en paralelo a la Fase 6 si el equipo lo prefiere, ya que el Course Builder es independiente de la integración con Moodle por diseño.
 
 ---
 

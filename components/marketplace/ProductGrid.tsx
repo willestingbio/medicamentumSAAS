@@ -5,14 +5,6 @@ import { ProductCard } from '@/components/marketplace/ProductCard';
 import { SkeletonGrid } from '@/components/marketplace/SkeletonCard';
 import { getProducts, type ProductListItem } from '@/lib/actions/products';
 
-function formatPrice(cents: number): string {
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency: 'COP',
-    minimumFractionDigits: 0,
-  }).format(cents);
-}
-
 interface ProductGridProps {
   initialProducts: ProductListItem[];
   initialHasMore: boolean;
@@ -78,7 +70,6 @@ export function ProductGrid({
           <ProductCard
             key={product.id}
             product={product}
-            formatPrice={formatPrice}
           />
         ))}
       </div>

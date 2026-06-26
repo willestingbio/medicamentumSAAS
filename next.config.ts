@@ -6,8 +6,7 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: process.env.NODE_ENV === 'development',
   },
-  // Configuración para Server Components y Server Actions
-  experimental: {},
+  serverExternalPackages: ['zod'],
 };
 
 export default nextConfig;

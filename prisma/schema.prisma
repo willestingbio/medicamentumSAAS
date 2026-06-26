@@ -3,7 +3,8 @@
 // TRD.md §3, BACKEND.md §3
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
@@ -24,6 +25,24 @@ enum ProductType {
   ai_automation
 }
 
+enum ContentSource {
+  native
+  moodle_legacy
+}
+
+enum LessonType {
+  video
+  text
+  quiz
+  resource
+}
+
+enum QuestionType {
+  single_choice
+  multiple_choice
+  true_false
+}
+
 enum OrderStatus {
   pending
   paid
@@ -41,9 +60,10 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users       User[]
-  orders      Order[]
-  invitations OrganizationInvitation[]
+  users               User[]
+  orders              Order[]
+  invitations         OrganizationInvitation[]
+  employeeAssignments EmployeeAssignment[]
 
   @@map("organizations")
 }
@@ -80,22 +100,24 @@ model OrganizationInvitation {
 }
 
 model User {
-  id             String        @id @default(cuid())
-  email          String        @unique
-  name           String
-  lastName       String?
-  emailVerified  Boolean       @default(false)
-  image          String?
-  role           Role          @default(student)
-  organizationId String?
-  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
-  moodleUserId   Int?          @unique
-  profilePicUrl  String?
-  specialty      String?
-  locale         String        @default("es")
-  theme          String        @default("system")
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  id               String        @id @default(cuid())
+  email            String        @unique
+  name             String
+  lastName         String?
+  emailVerified    Boolean       @default(false)
+  image            String?
+  role             Role          @default(student)
+  organizationId   String?
+  organization     Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  moodleUserId     Int?          @unique
+  profilePicUrl    String?
+  specialty        String?
+  locale           String        @default("es")
+  theme            String        @default("system")
+  twoFactorEnabled Boolean       @default(false)
+  twoFactorSecret  String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   enrollments    Enrollment[]
   orders         Order[]
@@ -103,8 +125,13 @@ model User {
   certificates   Certificate[]
   reviews        Review[]
   calendarEvents CalendarEvent[]
+  calendarConnection CalendarConnection?
+  vrKeys         VrKey[]
   sessions       Session[]
   accounts       Account[]
+
+  employeeAssignments EmployeeAssignment[] @relation("AssignedUser")
+  assignedByMe        EmployeeAssignment[] @relation("AssignedBy")
 
   @@map("users")
 }
@@ -169,9 +196,13 @@ model Product {
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
-  enrollments Enrollment[]
-  orderItems  OrderItem[]
-  reviews     Review[]
+  enrollments  Enrollment[]
+  orderItems   OrderItem[]
+  reviews      Review[]
+  cartItems    CartItem[]
+  certificates Certificate[]
+  vrKeys       VrKey[]
+  course       Course?
 
   @@map("products")
 }
@@ -209,6 +240,7 @@ model CartItem {
   cartId    String
   cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
   productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   quantity  Int      @default(1)
   userId    String?
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -226,10 +258,22 @@ model Order {
   organization       Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   status             OrderStatus   @default(pending)
   subtotalCents      Int
+  discountCents      Int           @default(0)
   taxCents           Int
   totalCents         Int
-  billingDocType     String
+  billingFirstName   String
+  billingLastName    String
+  billingDocType     String        @default("CC")
   billingDocId       String
+  billingEmail       String
+  billingAddress     String?
+  billingCity        String?
+  billingState       String?
+  billingCountry     String        @default("CO")
+  billingPhone       String?
+  couponId           String?
+  coupon             Coupon?       @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  wompiReference     String?       @unique
   wompiTransactionId String?       @unique
   items              OrderItem[]
   createdAt          DateTime      @default(now())
@@ -252,16 +296,50 @@ model OrderItem {
   @@map("order_items")
 }
 
+model Coupon {
+  id              String    @id @default(cuid())
+  code            String    @unique
+  discountPercent Int
+  maxUses         Int?
+  usedCount       Int       @default(0)
+  minAmountCents  Int       @default(0)
+  expiresAt       DateTime?
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  orders Order[]
+
+  @@map("coupons")
+}
+
+model EmployeeAssignment {
+  id               String       @id @default(cuid())
+  userId           String
+  user             User         @relation("AssignedUser", fields: [userId], references: [id], onDelete: Cascade)
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignedByUserId String
+  assignedBy       User         @relation("AssignedBy", fields: [assignedByUserId], references: [id], onDelete: Restrict)
+  assignedAt       DateTime     @default(now())
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@map("employee_assignments")
+}
+
 model Certificate {
   id          String   @id @default(cuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   pdfUrl      String
   issuedAt    DateTime @default(now())
   linkedinUrl String?
   createdAt   DateTime @default(now())
 
+  @@unique([userId, productId])
   @@map("certificates")
 }
 
@@ -291,4 +369,150 @@ model CalendarEvent {
   updatedAt     DateTime  @updatedAt
 
   @@map("calendar_events")
+}
+
+model VrKey {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  apiKey     String    @unique
+  label      String?
+  active     Boolean   @default(true)
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@unique([userId, productId])
+  @@index([apiKey])
+  @@map("vr_keys")
+}
+
+// ===== Course Builder (TRD.md §19.2) =====
+
+model Course {
+  id                 String        @id @default(cuid())
+  productId          String        @unique
+  product            Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  contentSource      ContentSource @default(native)
+  language           String        @default("es")
+  estimatedHours     Float?
+  passingScorePct    Int           @default(70)
+  certificateEnabled Boolean       @default(true)
+  modules            Module[]
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@index([productId])
+  @@map("courses")
+}
+
+model Module {
+  id               String   @id @default(cuid())
+  courseId         String
+  course           Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title            String
+  order            Int
+  releaseAfterDays Int?
+  lessons          Lesson[]
+
+  @@index([courseId, order])
+  @@map("modules")
+}
+
+model Lesson {
+  id               String             @id @default(cuid())
+  moduleId         String
+  module           Module             @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  type             LessonType
+  title            String
+  order            Int
+  streamVideoId    String?
+  videoDurationSec Int?
+  textContent      String?            @db.Text
+  resourceKey      String?
+  resourceLabel    String?
+  isPreview        Boolean            @default(false)
+  completions      LessonCompletion[]
+  quiz             Quiz?
+
+  @@index([moduleId, order])
+  @@map("lessons")
+}
+
+model Quiz {
+  id               String         @id @default(cuid())
+  lessonId         String         @unique
+  lesson           Lesson         @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  shuffleQuestions Boolean        @default(true)
+  maxAttempts      Int?
+  timeLimitSec     Int?
+  questions        QuizQuestion[]
+  attempts         QuizAttempt[]
+
+  @@map("quizzes")
+}
+
+model QuizQuestion {
+  id          String       @id @default(cuid())
+  quizId      String
+  quiz        Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  type        QuestionType
+  prompt      String       @db.Text
+  order       Int
+  options     QuizOption[]
+  explanation String?      @db.Text
+
+  @@map("quiz_questions")
+}
+
+model QuizOption {
+  id         String       @id @default(cuid())
+  questionId String
+  question   QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  label      String
+  isCorrect  Boolean      @default(false)
+  order      Int
+
+  @@map("quiz_options")
+}
+
+model QuizAttempt {
+  id          String    @id @default(cuid())
+  quizId      String
+  quiz        Quiz      @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  userId      String
+  scorePct    Float
+  passed      Boolean
+  answers     Json
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([quizId, userId])
+  @@map("quiz_attempts")
+}
+
+model LessonCompletion {
+  id          String   @id @default(cuid())
+  lessonId    String
+  lesson      Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  userId      String
+  completedAt DateTime @default(now())
+
+  @@unique([lessonId, userId])
+  @@index([userId])
+  @@map("lesson_completions")
+}
+
+model CalendarConnection {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshToken String   @db.Text
+  calendarId   String   @default("primary")
+  connectedAt  DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("calendar_connections")
 }

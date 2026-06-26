@@ -176,7 +176,7 @@ export const auth = betterAuth({
   },
 
   onAPIError: {
-    throw: true,
+    throw: false,
   },
 
   // Configuración avanzada de seguridad (Fase 8)

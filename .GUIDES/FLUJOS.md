@@ -1,6 +1,6 @@
 # FLUJOS — Medicamentum360
 **Flujos de usuario — happy path, variantes y edge cases**
-Versión: 1.0 · Fecha: 2026-06-22
+Versión: 2.0 · Fecha: 2026-06-24 · Añade Course Builder y Marketplace Multi-Vendor
 
 > **Relación con otros documentos:** este documento describe los flujos de usuario de extremo a extremo. La especificación visual de cada pantalla está en `UX_UI.md`. La implementación técnica (Server Actions, Route Handlers, webhooks) está en `BACKEND.md`. La arquitectura de datos está en `TRD.md`.
 
@@ -19,7 +19,13 @@ Versión: 1.0 · Fecha: 2026-06-22
 9. Generación y descarga de certificado
 10. Invitar empleados (hospital_admin)
 11. Creación de producto por super_admin
-12. Vinculación con Moodle desde el panel admin
+12. Vinculación con Moodle desde el panel admin (legacy)
+13. Creación de curso completo en el Course Builder
+14. Consumo de un curso por el estudiante (lecciones, drip, quizzes)
+15. Subida y reemplazo de video de lección
+16. Onboarding de vendor y revisión editorial
+17. Venta de un producto de vendor — comisión y payout
+18. Suspensión o baja de un vendor
 
 ---
 
@@ -248,9 +254,11 @@ Versión: 1.0 · Fecha: 2026-06-22
 
 ---
 
-## 12. Vinculación con Moodle desde el panel admin
+## 12. Vinculación con Moodle desde el panel admin (legacy)
 
 **Actor:** `super_admin` creando o editando un curso.
+
+> **Nota v2.0:** este flujo queda vigente solo para cursos `contentSource: moodle_legacy` — casos donde se decide a propósito que el contenido siga viviendo en la interfaz nativa de Moodle (por ejemplo, reporting corporativo de un hospital que ya integra con Moodle). **Para crear un curso nuevo, el flujo principal es el §13 (Course Builder)**, que no requiere ninguno de los pasos siguientes.
 
 **Opción A — Vincular a curso existente:**
 1. En la sección "Vinculación con Moodle" → selecciona "Vincular a curso existente".
@@ -278,4 +286,129 @@ Versión: 1.0 · Fecha: 2026-06-22
 - Moodle no responde (timeout) → mensaje de error "No se pudo conectar con Moodle. Verifica la configuración o inténtalo más tarde." El formulario no bloquea — el admin puede guardar el producto con la opción C.
 - `MOODLE_WS_TOKEN` inválido o sin permisos → error 403 desde Moodle → mensaje "Error de autenticación con Moodle. Contacta al equipo técnico."
 - Curso de Moodle ya vinculado a otro producto → advertencia "Este curso de Moodle ya está vinculado al producto [Nombre]. ¿Quieres vincularlo también aquí?" (se permite, pero se avisa).
+
+---
+
+## 13. Creación de curso completo en el Course Builder
+
+**Actor:** `super_admin` o `Vendor.status: active`.
+
+**Happy path:**
+1. Desde `/instructor` (o `/admin/products` para `super_admin`), clic en "Nuevo curso" → completa los datos básicos del `Product` (título, descripción, categoría = Curso, precio, cupo) igual que el flujo 11.
+2. Al guardar, se crea automáticamente un `Course` vacío (`contentSource: native`) vinculado al `Product` → redirige directo al editor (`/instructor/courses/[id]`).
+3. Crea el primer módulo → "Módulo 1: Introducción" (título editable inline).
+4. Dentro del módulo, agrega lecciones una por una, eligiendo el tipo: Video / Texto / Quiz / Recurso.
+   - **Video:** arrastra el archivo → sube directo a Cloudflare Stream (flujo 15) → estado "Procesando..." → "Listo" cuando Cloudflare confirma.
+   - **Texto:** escribe directamente en el editor enriquecido.
+   - **Quiz:** agrega preguntas y opciones, marca la(s) correcta(s), opcionalmente añade explicación.
+   - **Recurso:** sube un PDF/slide descargable.
+5. Reordena módulos/lecciones con drag & drop según necesite — el orden se persiste automáticamente.
+6. Marca 1-2 lecciones introductorias como "Vista previa" (`isPreview: true`) para que el marketplace las muestre gratis.
+7. Opcionalmente configura drip: "Módulo 2 se desbloquea a los 7 días de inscripción".
+8. Configura `passingScorePct` (default 70%) y si el curso emite certificado al completarse.
+9. Vista previa en vivo (columna derecha) durante todo el proceso — verifica que se vea bien antes de enviar a revisión/publicar.
+10. **Si es `super_admin`:** botón "Publicar" → mismas validaciones del flujo 11 (slug, portada) + nuevas validaciones de contenido (ver edge cases) → `published: true` directo.
+11. **Si es `vendor`:** botón "Enviar para revisión" → `reviewStatus: pending_review` → entra a la bandeja de `/admin/review-queue` (flujo 16, paso de aprobación).
+
+**Edge cases:**
+- Intentar publicar/enviar a revisión con un módulo sin lecciones → advertencia bloqueante "El módulo '[nombre]' no tiene lecciones. Elimínalo o agrega contenido."
+- Intentar publicar con una lección de video que sigue en estado "Procesando" o "Error" → advertencia bloqueante "La lección '[nombre]' no tiene un video listo para reproducir."
+- Intentar publicar un quiz sin preguntas, o con una pregunta sin ninguna opción marcada como correcta → advertencia bloqueante con el nombre exacto de la lección afectada (no un error genérico).
+- El instructor cierra el navegador a mitad de edición → el autosave de campos de texto (debounce 2s) y el guardado inmediato de cambios estructurales garantizan que no se pierda trabajo más allá de los últimos 2 segundos de tecleo.
+- Dos pestañas del mismo instructor editando el mismo curso a la vez → último guardado gana (mismo patrón de "last-write-wins" ya aceptado en el resto del sistema); no se implementa lock optimista en esta fase — si se vuelve un problema real, se revisita.
+
+---
+
+## 14. Consumo de un curso por el estudiante (lecciones, drip, quizzes)
+
+**Actor:** estudiante con `Enrollment` activo en un curso `contentSource: native`.
+
+**Happy path:**
+1. Desde `/dashboard` → Mis Cursos → clic en el curso → entra directo a la primera lección no completada (o la primera del curso si no ha empezado).
+2. Ve el video (o lee el texto, o descarga el recurso) en el reproductor de lección (`UX_UI.md §3.10`).
+3. Al llegar al 90% del video, o al hacer clic explícito en "Marcar como completada", se registra `LessonCompletion` → `Enrollment.progressPct` se recalcula al instante.
+4. "Siguiente" avanza a la lección siguiente en el orden del curso. Si la siguiente está en un módulo bloqueado por drip, muestra "Esta lección se desbloquea el [fecha]" en vez de un enlace roto.
+5. Al llegar a una lección tipo quiz: responde las preguntas, envía → `QuizAttempt` se crea con `scorePct` calculado server-side (nunca confiar en un cálculo hecho en el cliente, para evitar manipulación) → ve el resultado con revisión pregunta por pregunta.
+6. Al completar el 100% de las lecciones del curso (y aprobar todos los quizzes obligatorios, si los hay) → `Enrollment.status = "completed"` → dispara la misma lógica de certificado del flujo 9, sin esperar ningún cron de sincronización con Moodle.
+
+**Edge cases:**
+- Estudiante intenta saltarse directamente a una lección posterior sin completar las anteriores → permitido (no se fuerza linealidad estricta, mismo criterio flexible que la mayoría de plataformas de e-learning), salvo que esté bloqueada por drip.
+- Quiz con `maxAttempts` agotado y no aprobado → ver `UX_UI.md §3.10.1`, mensaje claro con sugerencia de contactar soporte.
+- Video que falla al cargar (problema de red del estudiante, no de Cloudflare) → mensaje de error con botón "Reintentar", nunca una pantalla en blanco.
+- El token de reproducción firmado expira mientras el estudiante mira el video (sesión muy larga) → el reproductor detecta el error 403 del manifiesto y pide automáticamente un token nuevo sin interrumpir la reproducción visible (se renueva en segundo plano antes de que el actual expire, con margen de algunos minutos).
+
+---
+
+## 15. Subida y reemplazo de video de lección
+
+**Actor:** `super_admin` o `vendor` editando una lección de tipo Video.
+
+**Happy path:**
+1. En el editor de lección (`UX_UI.md §3.11`), arrastra el archivo de video al dropzone.
+2. El cliente llama a `getVideoUploadUrl(lessonId, duración_estimada)` (Server Action) → recibe una URL de subida directa de Cloudflare Stream.
+3. El navegador sube el archivo **directo a Cloudflare**, sin pasar por el servidor de Medicamentum360 — barra de progreso real basada en el evento `progress` del `XMLHttpRequest`/`fetch` de la subida.
+4. Al terminar la subida, la lección muestra "Procesando video..." (Cloudflare transcodifica a HLS adaptativo en segundo plano).
+5. Cloudflare llama al webhook `POST /api/webhooks/cloudflare-stream` cuando termina → la lección pasa a "Listo" con miniatura y duración visibles.
+6. El instructor puede previsualizar el video reproduciéndolo directamente en la columna de vista previa, exactamente como lo vería un estudiante.
+
+**Edge cases:**
+- El instructor sube un video y luego sube otro para reemplazarlo antes de que el primero termine de procesar → se cancela el seguimiento del primero, se borra de Cloudflare (`deleteStreamVideo`) para no acumular costo de storage huérfano, y se sigue el progreso del nuevo.
+- El video falla en el procesamiento de Cloudflare (archivo corrupto, formato no soportado) → el webhook recibe `status.state: "error"` → la lección muestra "Error al procesar este video. Intenta subir un archivo distinto (formatos soportados: MP4, MOV)" + se notifica por email si el instructor ya cerró la pestaña.
+- Conexión a internet se corta a mitad de la subida → el cliente detecta el fallo de la petición de subida (no del webhook) y permite reintentar sin tener que volver a pedir una nueva `uploadURL` si todavía no expiró (Cloudflare mantiene la URL de direct upload válida durante una ventana de tiempo razonable).
+- Video muy largo (ej. 3+ horas, fuera de lo esperado para una lección) → `maxDurationSeconds` configurado en la creación de la URL de subida rechaza el archivo con un mensaje claro de límite — el límite por defecto se documenta en `BACKEND.md §16` y puede ajustarse según el caso de uso real del catálogo.
+
+---
+
+## 16. Onboarding de vendor y revisión editorial
+
+**Actor:** instructor médico independiente o estudio de VR que quiere vender en el marketplace.
+
+**Happy path:**
+1. Usuario autenticado va a `/vender` → completa Paso 1 (nombre público, bio, tipo de contenido) → `registerAsVendor()` crea `Vendor` con `status: pending_kyc`.
+2. Paso 2: sube certificado bancario, completa datos fiscales y de cuenta → `submitVendorKyc()` cifra los datos bancarios (`BACKEND.md §18.1`) y pasa `Vendor.status` a `pending_review`.
+3. El equipo de Medicamentum360 recibe notificación (Brevo) de un vendor nuevo pendiente de revisión.
+4. `super_admin` revisa los datos del vendor (identidad, coherencia de la documentación) en un panel simple de aprobación de vendors (extensión natural de `/admin/review-queue`) → `approveVendor()` → `Vendor.status: active`.
+5. El vendor recibe email de bienvenida con enlace a `/instructor` → crea su primer producto (curso o experiencia VR) siguiendo el flujo 13 (cursos) o el flujo de creación de producto VR equivalente (mismo formulario de `/admin/products` pero scoped a su `vendorId`).
+6. Al terminar de construir su producto, en vez de "Publicar" usa "Enviar para revisión" → `reviewStatus: pending_review`.
+7. `super_admin` revisa el producto completo en `/admin/review-queue` (vista previa real, no solo metadatos) → "Aprobar" → `reviewStatus: approved` + el vendor puede ahora decidir publicarlo (`published: true`) cuando quiera, sin pasar por revisión otra vez salvo que edite contenido sustancial después.
+
+**Edge cases:**
+- KYC rechazado (documentación inconsistente, datos bancarios no verificables) → `Vendor.status` puede pasar a `suspended` con un motivo de texto libre enviado por email; el usuario puede volver a `/vender` y reenviar datos corregidos, lo que lo regresa a `pending_review`.
+- Vendor pendiente de revisión intenta crear un producto antes de ser aprobado → se le permite *crear y editar en borrador* (para no bloquear su trabajo), pero el botón "Enviar para revisión" está deshabilitado con el mensaje "Tu perfil de creador debe ser aprobado primero" hasta que `Vendor.status: active`.
+- Producto rechazado en revisión editorial → `reviewStatus: rejected` + motivo obligatorio enviado al vendor por email → el vendor edita y puede reenviar (`pending_review` de nuevo).
+- Un mismo usuario con `role: hospital_admin` también se registra como `Vendor` → ambos roles son independientes y coexisten sin conflicto (el `Vendor` no hereda permisos de `hospital_admin` ni viceversa) — se documenta explícitamente porque es un caso real esperado (ej. un hospital que además quiere vender formación propia a otros hospitales).
+
+---
+
+## 17. Venta de un producto de vendor — comisión y payout
+
+**Actor:** estudiante comprando un producto de un `vendor`; `super_admin` aprobando el pago al vendor.
+
+**Happy path:**
+1. Estudiante compra un producto con `vendorId` no nulo — el flujo de checkout es **idéntico** al flujo 5 (mismo Wompi, mismo webhook, mismo `Order`); el estudiante no percibe ninguna diferencia entre comprar un producto propio de Medicamentum360 o de un vendor externo.
+2. A fin de mes (o el periodo configurado), un cron job ejecuta `generateMonthlyPayoutBatch()` → crea un `Payout` por cada vendor con ventas en el periodo, calculando bruto/comisión/neto.
+3. `super_admin` revisa el lote en `/admin/payouts` (`UX_UI.md §3.14`) — verifica los montos, puede marcar un payout específico en disputa como `failed` con motivo si hay un reclamo pendiente (ej. una orden reembolsada que no debería contar).
+4. `super_admin` aprueba el lote → `approveAndSendPayout()` por cada `Payout` aprobado → desencripta los datos bancarios del vendor, llama a la API de transferencias de Wompi (`WOMPI_VENDOR_PAYOUT_KEY`) → `Payout.status: processing` → `paid` al confirmar la transferencia.
+5. El vendor ve el historial de sus payouts (solo lectura) en su propio panel (`/instructor/payouts` o sección de `/vender`), con el desglose bruto/comisión/neto de cada periodo — transparencia total, sin necesidad de pedirlo por soporte.
+
+**Edge cases:**
+- Una orden del periodo es reembolsada (ej. cliente pide devolución) después de generado el `Payout` pero antes de pagarlo → `super_admin` debe poder ajustar manualmente el lote antes de aprobar (restar esa orden del bruto) — el sistema no recalcula automáticamente para evitar sorpresas; se documenta como ajuste manual explícito en esta fase.
+- La transferencia bancaria vía Wompi falla (cuenta inválida, banco rechaza) → `Payout.status: failed` con el motivo devuelto por Wompi, nunca se reintenta automáticamente; el vendor es notificado para corregir sus datos bancarios.
+- Vendor con ventas pero `Vendor.status: suspended` a mitad de periodo → sus ventas previas a la suspensión sí generan payout (no se penaliza retroactivamente); las ventas de productos suyos después de la suspensión no deberían poder ocurrir porque sus productos se despublican al suspenderlo (ver flujo 18).
+
+---
+
+## 18. Suspensión o baja de un vendor
+
+**Actor:** `super_admin`.
+
+**Happy path:**
+1. Por incumplimiento (contenido de baja calidad reportado, fraude, solicitud propia del vendor) → `super_admin` cambia `Vendor.status` a `suspended` desde un panel de gestión de vendors.
+2. Todos los productos de ese vendor (`Product.vendorId = vendor.id`) se despublican automáticamente (`published: false`) y se retiran de la indexación de Meilisearch — no se eliminan, para no perder el historial de quienes ya compraron.
+3. Los estudiantes que ya tenían `Enrollment` activo en cursos de ese vendor **mantienen su acceso** — la suspensión afecta nuevas ventas, no el acceso ya pagado (principio básico de protección al consumidor, y evita disputas de reembolso masivas).
+4. Cualquier `Payout` pendiente de periodos anteriores a la suspensión se procesa normalmente.
+
+**Edge cases:**
+- El vendor pide reactivación tras una suspensión → vuelve a `pending_review`, requiere aprobación explícita de `super_admin` (no se reactiva automáticamente, ni siquiera si la suspensión fue a petición propia del vendor).
+- Vendor suspendido por fraude de pago (no por calidad de contenido) → además de la suspensión, se documenta como caso para revisar manualmente si corresponde retener algún `Payout` pendiente — fuera del alcance de automatizar en esta fase, requiere intervención humana caso por caso.
 

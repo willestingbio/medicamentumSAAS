@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import zxcvbn from 'zxcvbn';
 import { authClient } from '@/lib/auth-client';
@@ -51,7 +51,6 @@ interface OrganizationInfo {
 }
 
 export default function SignUpPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const orgCode = searchParams.get('org_code');
   const [error, setError] = useState<string | null>(null);
@@ -112,8 +111,7 @@ export default function SignUpPage() {
         }
       }
 
-      router.push('/dashboard');
-      router.refresh();
+      window.location.href = '/dashboard';
     } catch {
       setError('Error de conexión. Intenta de nuevo.');
     } finally {

@@ -1,10 +1,12 @@
 # BACKEND — Medicamentum360
 **Implementación de Server Actions, Route Handlers y lógica de negocio**
-Versión: 2.0 · Fecha: 2026-06-22
+Versión: 3.0 · Fecha: 2026-06-24
 
 > **Cambio v2.0:** se elimina toda referencia a InsForge SDK (`@insforge/sdk`), InsForge CLI y Vercel. La app corre en **VPS con Docker**. Postgres accesible vía TCP directo. Storage via **Cloudflare R2** (o MinIO). Ver `TRD.md §1-2` y `DEPLOY.md` para la arquitectura completa.
 
-> **Fuente de verdad del stack:** Next.js 15 + App Router, Server Actions, React 19. Postgres 16 (Docker) + Prisma 7 (con `@prisma/adapter-pg`). Better Auth 1.6.20. Nginx como reverse proxy.
+> **Cambio v3.0:** se añaden las Server Actions del **Course Builder** (§15-16) y del **Marketplace Multi-Vendor** (§17-18). Ver `TRD.md §19-20` para el modelo de datos y la justificación de arquitectura (en particular, por qué el contenido del curso vive en Postgres y no en Moodle — `TRD.md §19.1`).
+
+> **Fuente de verdad del stack:** Next.js 15 + App Router, Server Actions, React 19. Postgres 16 (Docker) + Prisma 7 (con `@prisma/adapter-pg`). Better Auth 1.6.20. Nginx como reverse proxy. Cloudflare Stream para video (nuevo en v3.0).
 
 ---
 
@@ -18,8 +20,10 @@ lib/
   prisma.ts                  — singleton de PrismaClient
   storage/
     client.ts                — cliente S3-compatible (Cloudflare R2 / MinIO)
+  video/
+    stream-client.ts         — cliente Cloudflare Stream (direct upload, signed playback tokens)
   moodle/
-    client.ts                — cliente HTTP wrapper de la API REST de Moodle
+    client.ts                — cliente HTTP wrapper de la API REST de Moodle (solo cursos/usuarios/inscripciones, ver TRD.md §19.1)
   actions/
     auth.ts                  — registro, vinculación org
     invitation.ts            — CRUD de invitaciones de organización
@@ -27,7 +31,20 @@ lib/
     products.ts              — CRUD de productos (público: búsqueda, detalle)
     admin/
       products.ts            — CRUD admin (solo super_admin)
-      moodle.ts              — búsqueda y creación de cursos en Moodle
+      moodle.ts              — vinculación opcional con Moodle (legacy, ver TRD.md §19.1)
+      review-queue.ts        — aprobación/rechazo de productos de vendors (TRD.md §20.4)
+      payouts.ts             — revisión y disparo de lotes de payout a vendors
+    course-builder/
+      courses.ts             — CRUD de Course (crear, editar metadatos, publicar)
+      modules.ts              — CRUD de Module + reordenar (drag & drop)
+      lessons.ts               — CRUD de Lesson (video/texto/quiz/recurso) + reordenar
+      quizzes.ts                — CRUD de Quiz/QuizQuestion/QuizOption
+      video-upload.ts            — genera Direct Upload URL de Cloudflare Stream
+      progress.ts                 — marcar lección completada, calcular progressPct, intentos de quiz
+    vendor/
+      onboarding.ts            — registro de Vendor, KYC, datos bancarios (cifrados)
+      vendor-products.ts        — CRUD de productos propios del vendor (reutiliza products.ts con scoping)
+      payouts.ts                — historial de payouts del propio vendor (solo lectura)
     cart.ts                  — carrito (agregar, eliminar, merge guest)
     checkout.ts              — creación de orden
     certificates.ts          — generación de certificados
@@ -42,15 +59,19 @@ app/
     webhooks/
       wompi/
         route.ts             — webhook de Wompi (HMAC + idempotencia)
+      cloudflare-stream/
+        route.ts             — webhook de Cloudflare Stream (video.ready, video.error)
     moodle/
       autologin/
-        route.ts             — genera autologin token y redirige
+        route.ts             — genera autologin token y redirige (solo contentSource=moodle_legacy)
     admin/
       upload/
         product-cover/
           route.ts           — upload de imagen a Cloudflare R2
         vr-asset/
           route.ts           — upload de modelo glTF/glb a R2
+        lesson-resource/
+          route.ts           — upload de PDF/descargable de lección a R2
     auth/
       [...all]/
         route.ts             — handler de Better Auth
@@ -205,13 +226,13 @@ Sin cambios respecto a BACKEND v1.0 §3.
 
 ## 5. Cliente de Moodle
 
-Sin cambios respecto a BACKEND v1.0 §4.
+Sin cambios respecto a BACKEND v1.0 §4 — **con una precisión importante en v3.0:** el cliente (`lib/moodle/client.ts`) solo se usa para: crear cuenta espejo de usuario (`core_user_create_users`), inscribir tras el pago (`enrol_manual_enrol_users`), y, solo para cursos `contentSource: moodle_legacy`, autologin SSO y sync de progreso. **No** se usa, porque no existe función core para ello, para crear secciones, recursos o quizzes dentro de un curso — ver `TRD.md §19.1` para el detalle de esta limitación de la API de Moodle y por qué el Course Builder vive en Postgres.
 
 ---
 
 ## 6. Route Handler de autologin SSO a Moodle
 
-Sin cambios respecto a BACKEND v1.0 §5.
+Sin cambios respecto a BACKEND v1.0 §5. **Aplica solo a cursos con `Course.contentSource = 'moodle_legacy'`** — los cursos creados desde el Course Builder nuevo (`contentSource: 'native'`, default) no necesitan autologin porque el contenido se sirve directamente desde `/dashboard/cursos/[slug]` con el reproductor propio (`BACKEND.md §16`).
 
 ---
 
@@ -223,13 +244,13 @@ Sin cambios respecto a BACKEND v1.0 §6.
 
 ## 8. Server Actions — Panel admin de productos
 
-Sin cambios respecto a BACKEND v1.0 §7.
+Sin cambios respecto a BACKEND v1.0 §7. **Extensión en v3.0:** ver §17 para las Server Actions equivalentes cuando el producto lo crea un `vendor` externo en vez del `super_admin` — la lógica de CRUD es la misma, pero con scoping adicional (`vendorId = session.user.vendorId`) y el campo `reviewStatus` en vez de publicación directa.
 
 ---
 
 ## 9. Server Actions — Moodle desde el panel admin
 
-Sin cambios respecto a BACKEND v1.0 §8.
+Sin cambios respecto a BACKEND v1.0 §8. **Vigente solo como opción "Vincular curso legacy a Moodle" — ya no es el flujo principal de creación de contenido.** El flujo principal para crear un curso nuevo es el Course Builder (§15).
 
 ---
 
@@ -362,7 +383,20 @@ BREVO_API_KEY=...
 
 # Brand
 NEXT_PUBLIC_BRAND_COLOR=#8127cf
+
+# Cloudflare Stream — video de lecciones (Course Builder, ver §16)
+CLOUDFLARE_STREAM_ACCOUNT_ID=...
+CLOUDFLARE_STREAM_API_TOKEN=...
+CLOUDFLARE_STREAM_SIGNING_KEY_ID=...
+CLOUDFLARE_STREAM_SIGNING_KEY_PEM=...
+
+# Marketplace multi-vendor (ver §17-18)
+MARKETPLACE_COMMISSION_PCT=20
+WOMPI_VENDOR_PAYOUT_KEY=...
+VENDOR_BANK_ENCRYPTION_KEY=<openssl rand -base64 32 — DISTINTA de BETTER_AUTH_SECRET>
 ```
+
+> **Recordatorio (`AGENTS.md §2.5`):** estas son variables de *referencia*. Nunca se escriben directamente sobre el `.env.local` real sin confirmación explícita del humano — se documentan aquí y se comunican, y el humano decide quién las añade.
 
 ---
 
@@ -382,6 +416,11 @@ NEXT_PUBLIC_BRAND_COLOR=#8127cf
 - [ ] Firewall UFW activo (solo puertos 22, 80, 443)
 - [ ] Nginx NO expone Meilisearch (7700) ni Postgres (5432) al exterior
 - [ ] Backups automáticos de Postgres configurados (ver `DEPLOY.md §10`)
+- [ ] Webhook de Cloudflare Stream: verificar firma antes de marcar una lección como `ready` (§16)
+- [ ] Video de lecciones nunca expuesto vía URL pública directa — solo manifiesto HLS firmado con `requireSignedURLs: true` (§16)
+- [ ] `bankAccountInfo` de `Vendor` cifrado en reposo con `VENDOR_BANK_ENCRYPTION_KEY` (AES-256-GCM) — nunca en texto plano ni siquiera para `super_admin` (§18.1)
+- [ ] Ningún producto de un `vendor` externo pasa a `published: true` sin `reviewStatus: approved` (§17.3)
+- [ ] Primer lote de payouts a vendors revisado y aprobado manualmente por `super_admin` antes de disparar el pago real (§18.2)
 
 ---
 
@@ -404,3 +443,325 @@ Los siguientes patrones de BACKEND v1.0 ya NO aplican:
 - `DATABASE_URL` con `?pgbouncer=true` — no necesario; Postgres en Docker es acceso TCP directo
 - `pooler.<appkey>.us-east.insforge.app` — no aplica; Postgres está en `postgres:5432` (Docker network)
 - Bridge JWT route `/api/insforge-token` — ya no necesario (el RLS funciona con la conexión directa de Prisma y el JWT de Better Auth en las policies)
+
+---
+
+## 15. Server Actions — Course Builder (crear/editar contenido del curso)
+
+Todas las Server Actions de `lib/actions/course-builder/` siguen el patrón RBAC estándar (`FRONTEND_PATTERNS.md §8.3`): validan sesión, validan que el usuario sea `super_admin` o el `vendor` propietario del `Product` asociado al `Course`, y delegan el resto a RLS como defensa en profundidad.
+
+```ts
+// lib/actions/course-builder/courses.ts
+"use server";
+import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
+
+async function assertCourseOwner(courseId: string) {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session?.user) throw new Error("No autenticado");
+
+  const course = await prisma.course.findUnique({
+    where: { id: courseId },
+    include: { product: { include: { vendor: true } } },
+  });
+  if (!course) throw new Error("Curso no encontrado");
+
+  const role = (session.user as any).role;
+  const isOwnerVendor = course.product.vendor?.userId === session.user.id;
+  if (role !== "super_admin" && !isOwnerVendor) {
+    throw new Error("No autorizado para editar este curso");
+  }
+  return { session, course };
+}
+
+export async function createCourse(productId: string) {
+  // crea Course con valores por defecto (contentSource: 'native')
+  // — el productId ya debe existir y pertenecer al usuario actual (super_admin o vendor)
+}
+
+export async function updateCourseSettings(courseId: string, data: {
+  estimatedHours?: number;
+  passingScorePct?: number;
+  certificateEnabled?: boolean;
+}) {
+  await assertCourseOwner(courseId);
+  return prisma.course.update({ where: { id: courseId }, data });
+}
+```
+
+```ts
+// lib/actions/course-builder/modules.ts
+export async function createModule(courseId: string, title: string) {
+  await assertCourseOwner(courseId);
+  const count = await prisma.module.count({ where: { courseId } });
+  return prisma.module.create({ data: { courseId, title, order: count } });
+}
+
+export async function reorderModules(courseId: string, orderedModuleIds: string[]) {
+  await assertCourseOwner(courseId);
+  // Transacción: actualiza el campo `order` de cada módulo según su posición en el array
+  await prisma.$transaction(
+    orderedModuleIds.map((id, index) =>
+      prisma.module.update({ where: { id }, data: { order: index } })
+    )
+  );
+}
+
+export async function setModuleDripDelay(moduleId: string, releaseAfterDays: number | null) {
+  // valida ownership vía courseId del module, igual patrón que arriba
+}
+```
+
+```ts
+// lib/actions/course-builder/lessons.ts
+export async function createLesson(moduleId: string, type: "video" | "text" | "quiz" | "resource", title: string) {
+  // crea Lesson; si type === 'quiz', crea también el Quiz vacío en la misma transacción
+}
+
+export async function reorderLessons(moduleId: string, orderedLessonIds: string[]) {
+  // mismo patrón de transacción que reorderModules
+}
+
+export async function updateLessonContent(lessonId: string, data: {
+  textContent?: string;   // sanea con una librería tipo `sanitize-html` antes de persistir — nunca HTML crudo sin sanear
+  isPreview?: boolean;
+}) {
+  // ...
+}
+
+export async function deleteLesson(lessonId: string) {
+  // si type === 'video', dispara también el borrado del video en Cloudflare Stream
+  // (DELETE /accounts/{account_id}/stream/{video_uid}) para no acumular costo de storage huérfano
+}
+```
+
+**Patrón de reordenamiento (drag & drop):** el cliente envía el array completo de IDs en el nuevo orden tras soltar el elemento (optimistic UI ya aplicado en el cliente); el servidor solo persiste el orden final en una transacción — nunca incrementa/decrementa índices uno a uno, que es propenso a colisiones con ediciones concurrentes.
+
+---
+
+## 16. Video — Cloudflare Stream (upload, webhook, reproducción)
+
+Ver `TRD.md §19.4` para la justificación de por qué video va a Cloudflare Stream y no a R2.
+
+```ts
+// lib/video/stream-client.ts
+const ACCOUNT_ID = process.env.CLOUDFLARE_STREAM_ACCOUNT_ID!;
+const API_TOKEN = process.env.CLOUDFLARE_STREAM_API_TOKEN!;
+const CF_API = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/stream`;
+
+export async function createDirectUploadUrl(maxDurationSeconds = 3600) {
+  const res = await fetch(`${CF_API}/direct_upload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${API_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      maxDurationSeconds,
+      requireSignedURLs: true,
+      allowedOrigins: [new URL(process.env.BETTER_AUTH_URL!).hostname],
+    }),
+  });
+  if (!res.ok) throw new Error(`Cloudflare Stream error: ${res.status}`);
+  const { result } = await res.json();
+  return result as { uploadURL: string; uid: string };
+}
+
+export async function deleteStreamVideo(uid: string) {
+  await fetch(`${CF_API}/${uid}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${API_TOKEN}` },
+  });
+}
+
+export async function getVideoStatus(uid: string) {
+  const res = await fetch(`${CF_API}/${uid}`, {
+    headers: { Authorization: `Bearer ${API_TOKEN}` },
+  });
+  const { result } = await res.json();
+  return result.status?.state as "pendingupload" | "downloading" | "queued" | "inprogress" | "ready" | "error";
+}
+```
+
+```ts
+// lib/actions/course-builder/video-upload.ts
+"use server";
+import { createDirectUploadUrl } from "@/lib/video/stream-client";
+
+export async function getVideoUploadUrl(lessonId: string, maxDurationSeconds: number) {
+  await assertLessonOwner(lessonId); // mismo patrón que assertCourseOwner, vía moduleId → courseId
+  const { uploadURL, uid } = await createDirectUploadUrl(maxDurationSeconds);
+  await prisma.lesson.update({ where: { id: lessonId }, data: { streamVideoId: uid } });
+  return { uploadURL }; // el navegador del instructor hace el POST del archivo directo a esta URL
+}
+```
+
+```ts
+// app/api/webhooks/cloudflare-stream/route.ts
+import { prisma } from "@/lib/prisma";
+
+export async function POST(req: Request) {
+  // Cloudflare firma el body — verificar contra CLOUDFLARE_STREAM_WEBHOOK_SECRET
+  // (header `webhook-signature`) antes de procesar, igual de estricto que el webhook de Wompi.
+  const body = await req.json();
+  const { uid, status } = body;
+
+  if (status?.state === "ready") {
+    await prisma.lesson.updateMany({
+      where: { streamVideoId: uid },
+      data: { videoDurationSec: Math.round(body.duration ?? 0) },
+    });
+  }
+  if (status?.state === "error") {
+    console.error(`[cloudflare-stream] Fallo al procesar video ${uid}: ${status.errorReasonText}`);
+    // notificar al instructor (Brevo) que el video falló y debe re-subirlo
+  }
+
+  return Response.json({ received: true });
+}
+```
+
+**Reproducción en el dashboard del estudiante:** el componente de video del cliente nunca recibe la URL HLS directamente desde la base de datos — siempre pide un token firmado fresco a una Server Action (`getSignedPlaybackToken(lessonId)`), que valida que el usuario tenga `Enrollment` activo para ese curso antes de firmar. Esto evita que un usuario comparta un enlace de video persistente con alguien sin acceso.
+
+---
+
+## 17. Server Actions — Vendor onboarding y productos de vendor
+
+```ts
+// lib/actions/vendor/onboarding.ts
+"use server";
+import { encryptBankInfo } from "@/lib/crypto/vendor-bank"; // ver §18.1
+
+export async function registerAsVendor(displayName: string, bio: string) {
+  const session = await getSession();
+  if (!session?.user) throw new Error("No autenticado");
+
+  const existing = await prisma.vendor.findUnique({ where: { userId: session.user.id } });
+  if (existing) throw new Error("Ya tienes un perfil de vendor");
+
+  return prisma.vendor.create({
+    data: {
+      userId: session.user.id,
+      displayName,
+      bio,
+      status: "pending_kyc",
+      commissionPct: Number(process.env.MARKETPLACE_COMMISSION_PCT ?? 20),
+    },
+  });
+}
+
+export async function submitVendorKyc(vendorId: string, data: {
+  taxIdType: string;
+  taxIdNumber: string;
+  taxDocumentKey: string;     // ya subido a R2 vendor-documents/ por el route handler de upload
+  bankAccountInfo: { bankName: string; accountType: string; accountNumber: string };
+}) {
+  await assertOwnVendorProfile(vendorId);
+  const encrypted = encryptBankInfo(data.bankAccountInfo);
+  return prisma.vendor.update({
+    where: { id: vendorId },
+    data: {
+      taxIdType: data.taxIdType,
+      taxIdNumber: data.taxIdNumber,
+      taxDocumentKey: data.taxDocumentKey,
+      bankAccountInfo: encrypted,
+      status: "pending_review", // pasa a cola de revisión de super_admin
+    },
+  });
+}
+
+export async function approveVendor(vendorId: string) {
+  const session = await getSession();
+  if ((session?.user as any)?.role !== "super_admin") throw new Error("No autorizado");
+  return prisma.vendor.update({
+    where: { id: vendorId },
+    data: { status: "active", approvedAt: new Date(), approvedBy: session!.user.id },
+  });
+}
+```
+
+**Server Actions de productos de vendor (`lib/actions/vendor/vendor-products.ts`):** reutilizan la misma lógica de `lib/actions/admin/products.ts` (crear, editar, configurar precio/cupo, vincular video y quizzes vía Course Builder) pero con dos diferencias: (1) el `vendorId` se asigna automáticamente al `Vendor.id` de la sesión actual, nunca lo elige el formulario; (2) en vez de `publishProduct()` directo, la acción equivalente es `submitProductForReview()`, que pone `reviewStatus: 'pending_review'` y notifica (Brevo) al equipo editorial — nunca indexa en Meilisearch ni pone `published: true` por sí misma.
+
+---
+
+## 18. Comisión y payouts a vendors
+
+### 18.1 Cifrado de datos bancarios
+
+```ts
+// lib/crypto/vendor-bank.ts
+import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
+
+const ALGO = "aes-256-gcm";
+const KEY = Buffer.from(process.env.VENDOR_BANK_ENCRYPTION_KEY!, "base64"); // 32 bytes
+
+export function encryptBankInfo(data: object): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv(ALGO, KEY, iv);
+  const ciphertext = Buffer.concat([cipher.update(JSON.stringify(data), "utf8"), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  // Empaquetado: iv + authTag + ciphertext, todo en base64 para guardarlo en el campo Json como string
+  return Buffer.concat([iv, authTag, ciphertext]).toString("base64");
+}
+
+export function decryptBankInfo(packed: string): object {
+  const buf = Buffer.from(packed, "base64");
+  const iv = buf.subarray(0, 12);
+  const authTag = buf.subarray(12, 28);
+  const ciphertext = buf.subarray(28);
+  const decipher = createDecipheriv(ALGO, KEY, iv);
+  decipher.setAuthTag(authTag);
+  const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  return JSON.parse(plaintext.toString("utf8"));
+}
+```
+
+`VENDOR_BANK_ENCRYPTION_KEY` es una variable de entorno **distinta** de `BETTER_AUTH_SECRET` — nunca reutilizar secretos entre dominios de seguridad distintos. Solo el código de generación de payout (§18.2) llama a `decryptBankInfo`; ninguna pantalla de admin la expone en claro.
+
+### 18.2 Cálculo y aprobación de payouts
+
+```ts
+// lib/actions/admin/payouts.ts
+"use server";
+
+export async function generateMonthlyPayoutBatch(periodStart: Date, periodEnd: Date) {
+  await assertSuperAdmin();
+
+  const vendors = await prisma.vendor.findMany({ where: { status: "active" } });
+  const created = [];
+
+  for (const vendor of vendors) {
+    const orders = await prisma.order.findMany({
+      where: {
+        status: "paid",
+        createdAt: { gte: periodStart, lte: periodEnd },
+        items: { some: { product: { vendorId: vendor.id } } },
+      },
+      include: { items: { include: { product: true } } },
+    });
+
+    const grossAmount = orders
+      .flatMap((o) => o.items.filter((i) => i.product.vendorId === vendor.id))
+      .reduce((sum, item) => sum + item.priceAtPurchase, 0);
+
+    if (grossAmount === 0) continue;
+
+    const commissionAmount = Math.round(grossAmount * (vendor.commissionPct / 100));
+    const netAmount = grossAmount - commissionAmount;
+
+    created.push(
+      await prisma.payout.create({
+        data: { vendorId: vendor.id, periodStart, periodEnd, grossAmount, commissionAmount, netAmount, status: "pending" },
+      })
+    );
+  }
+
+  return created; // queda en 'pending' — requiere aprobación manual antes de disparar el pago real, ver §18.3
+}
+```
+
+### 18.3 Disparo del pago real — punto de parada obligatorio
+
+**No se implementa el disparo automático de transferencias bancarias reales en la primera versión de este feature** (ver `AGENTS.md §8`). El flujo correcto:
+1. `generateMonthlyPayoutBatch()` corre por cron, deja los `Payout` en `pending`.
+2. `super_admin` revisa el lote en `/admin/payouts` (ver `UX_UI.md §3.14`), puede ajustar o marcar un payout como `failed` si hay disputa.
+3. Solo entonces, una acción explícita `approveAndSendPayout(payoutId)` desencripta los datos bancarios del vendor, llama a la API de transferencias de Wompi con `WOMPI_VENDOR_PAYOUT_KEY`, y actualiza `Payout.status = 'processing'` → `'paid'` al confirmar.
+4. Cualquier fallo en el paso 3 deja el `Payout` en `failed` con el motivo registrado — nunca se reintenta automáticamente sin que un humano lo revise.

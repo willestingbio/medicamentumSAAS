@@ -1,9 +1,11 @@
 # TRD — Medicamentum360
 **Technical Requirements Document**
-Versión: 2.0 · Fecha: 2026-06-22
-Stack actualizado a despliegue VPS auto-alojado — reemplaza referencias a Vercel e InsForge.
+Versión: 3.0 · Fecha: 2026-06-24
+Stack actualizado a despliegue VPS auto-alojado — reemplaza referencias a Vercel e InsForge. Añade Course Builder propio y marketplace multi-vendor.
 
 > **Cambio mayor v2.0:** la plataforma de hosting pasa de Vercel + InsForge a **VPS propio con Docker Compose**. La base de datos es ahora **Postgres gestionado en el mismo VPS** (o managed externo como Neon/Supabase si se prefiere). El storage de archivos es **Cloudflare R2 o MinIO**. Ver `DEPLOY.md` para la guía completa de infraestructura.
+
+> **Cambio mayor v3.0:** se añade un **Course Builder propio** (§19) — instructores y `super_admin` crean cursos completos (módulos, lecciones, video, quizzes, recursos, certificación) directamente desde la plataforma, sin depender de la interfaz de administración de Moodle para el contenido. Se añade **Cloudflare Stream** (§19.4) como pieza de infraestructura para video protegido. Se añade el **Marketplace Multi-Vendor** (§20) — la plataforma se abre a instructores externos y estudios de VR que quieran vender sus propios cursos/experiencias, con comisión y payout (§20.3). Estos cambios son aditivos: no modifican el modelo de aislamiento RLS, la integración Wompi, ni el stack de hosting ya definidos en v2.0.
 
 ---
 
@@ -15,6 +17,8 @@ Stack actualizado a despliegue VPS auto-alojado — reemplaza referencias a Verc
                      │  Next.js App Router (SSR/│
                      │  SSG público, RSC priv.) │
                      │  Docker — standalone mode│
+                     │  + Course Builder (§19)  │
+                     │  + Vendor Panel (§20)    │
                      └───────────┬──────────────┘
                                   │  Nginx (SSL, proxy, rate limit)
         ┌───────────────────────────────────────────────────┐
@@ -23,14 +27,20 @@ Stack actualizado a despliegue VPS auto-alojado — reemplaza referencias a Verc
 │ Postgres        │       │  Server Actions /  │    │  Cloudflare R2     │
 │ (Docker en VPS) │◄─────►│  Route Handlers    │───►│  (imágenes, PDFs,  │
 │ Prisma ORM      │       │  (lógica de negocio│    │  certificados)     │
-└─────────────────┘       └─────────┬──────────┘    └────────────────────┘
-                                     │
-┌──────────────┬──────────────┬──────┴──────┬────────────┐
+│ + Course/Module/│       │  + course-builder/  │    └────────────────────┘
+│   Lesson/Quiz/  │       │    vendor actions)  │    ┌────────────────────┐
+│   Vendor/Payout │       └─────────┬──────────┘    │  Cloudflare Stream  │
+└─────────────────┘                 │                │  (video lecciones, │
+                                     │                │   HLS firmado)     │
+┌──────────────┬──────────────┬──────┴──────┬────────────┐ └─────────────────┘
 │              │              │             │            │
 ┌──────▼──────┐ ┌──────▼──────┐ ┌───▼────┐ ┌───▼──────┐ ┌───▼────┐
 │ Better Auth │ │  Wompi API  │ │ Moodle │ │Meili-    │ │ Brevo  │
 │ (sesiones,  │ │  + Webhook  │ │ WS API │ │search    │ │ (email)│
-│ Google OAuth)│ │  HMAC      │ │ SSO    │ │(Docker)  │ │        │
+│ Google OAuth)│ │  HMAC +    │ │ (solo  │ │(Docker)  │ │        │
+│             │ │  payouts    │ │ enrol/ │ │          │ │        │
+│             │ │  a vendors) │ │ SSO,   │ │          │ │        │
+│             │ │             │ │ §19.1) │ │          │ │        │
 └─────────────┘ └─────────────┘ └───┬────┘ └──────────┘ └────────┘
                                      │
                             ┌────────▼─────────┐
@@ -73,7 +83,8 @@ Stack actualizado a despliegue VPS auto-alojado — reemplaza referencias a Verc
 | Pagos | Wompi | Webhook con validación HMAC-SHA256 |
 | LMS | Moodle (headless) | `lms.medicamentum360.com`, API REST + SSO |
 | Búsqueda | Meilisearch v1.13 (Docker) | Índice de catálogo de productos |
-| Storage | Cloudflare R2 (o MinIO auto-alojado) | Avatares, portadas, certificados PDF, modelos glTF |
+| Storage | Cloudflare R2 (o MinIO auto-alojado) | Avatares, portadas, certificados PDF, modelos glTF, recursos descargables |
+| Video | Cloudflare Stream | Hosting, transcodificación adaptativa (HLS) y entrega protegida de video de lecciones — ver §19.4 |
 | Email | Brevo | Transaccional |
 | 3D/VR | React Three Fiber + Three.js + WebXR | Visor de preview |
 | Reverse proxy | Nginx (Docker) | SSL, rate limiting, static files, streaming |
@@ -206,8 +217,10 @@ export async function getSignedDownloadUrl(key: string, expiresInSeconds = 3600)
 }
 ```
 
-**Buckets a crear en R2:** `product-covers`, `avatars`, `certificates`, `invoices`, `vr-assets`.
-URLs públicas para `product-covers` y `avatars`; URLs firmadas con expiración para `certificates` e `invoices`.
+**Buckets a crear en R2:** `product-covers`, `avatars`, `certificates`, `invoices`, `vr-assets`, `lesson-resources` (PDFs/descargables adjuntos a lecciones), `vendor-documents` (KYC/datos fiscales de vendedores, ver §20.2 — siempre privado, nunca público).
+URLs públicas para `product-covers` y `avatars`; URLs firmadas con expiración para `certificates`, `invoices`, `lesson-resources` y `vendor-documents`.
+
+**Importante:** el video de las lecciones **no vive en R2**. Vive en Cloudflare Stream (§19.4) — R2 es solo para archivos estáticos (imágenes, PDFs, modelos 3D). Mezclar ambos lleva a servir video como descarga directa sin protección ni adaptación de bitrate, que es exactamente lo que §19.4 evita.
 
 ---
 
@@ -295,9 +308,21 @@ STORAGE_PUBLIC_URL=https://storage.medicamentum360.com
 # Brevo
 BREVO_API_KEY=...
 
+# Cloudflare Stream (video de lecciones — ver §19.4)
+CLOUDFLARE_STREAM_ACCOUNT_ID=...
+CLOUDFLARE_STREAM_API_TOKEN=...
+CLOUDFLARE_STREAM_SIGNING_KEY_ID=...
+CLOUDFLARE_STREAM_SIGNING_KEY_PEM=...
+
+# Marketplace multi-vendor (ver §20.3)
+MARKETPLACE_COMMISSION_PCT=20
+WOMPI_VENDOR_PAYOUT_KEY=...
+
 # Brand
 NEXT_PUBLIC_BRAND_COLOR=#8127cf
 ```
+
+> **Nota operativa (ver `AGENTS.md §2.5`):** estas variables son la *referencia* de qué debe existir en `.env.production`/`.env.local`. Cuando se añade una variable nueva a este documento, el agente nunca la escribe directamente sobre el `.env.local` real del desarrollador sin confirmación — la documenta aquí y se lo comunica al humano para que la añada él mismo, o confirme que el agente lo haga.
 
 ---
 
@@ -331,3 +356,309 @@ docker exec -i medicamentum_postgres psql -U medicamentum -d medicamentum360 < m
 ```
 
 **Ya no se usa InsForge CLI para migraciones.** El flujo `npx @insforge/cli db query` queda eliminado.
+
+---
+
+## 19. Course Builder propio — arquitectura
+
+### 19.1 Por qué el contenido del curso NO vive en Moodle
+
+**Hallazgo crítico de arquitectura (verificado contra la documentación oficial de Moodle, junio 2026):** la Web Service API de Moodle expone funciones core para crear y editar **cursos** (`core_course_create_courses`), **categorías** (`core_course_create_categories`), **usuarios** (`core_user_create_users`) e **inscripciones** (`enrol_manual_enrol_users`) — pero **no existe ninguna función core para crear secciones, recursos (`mod_resource`) o actividades de quiz (`mod_quiz`) dentro de un curso por API**. La única vía de subida de archivos (`core_files_upload`) deposita el archivo en el área "draft" del usuario, sin adjuntarlo automáticamente a una sección del curso — eso solo se puede hacer manualmente desde la interfaz de Moodle o escribiendo un plugin propio que extienda los web services (fuera de alcance de este proyecto).
+
+**Decisión de arquitectura (vinculante, no la reabras sin razón de peso):** el contenido pedagógico de cada curso — módulos, lecciones, video, texto, recursos descargables, quizzes — vive **enteramente en Postgres propio**, construido y editado desde el Course Builder de Medicamentum360 (`/instructor`). Moodle deja de ser "donde vive el curso" y pasa a ser exclusivamente:
+1. El motor de **inscripción** (`Enrollment` espejo + `enrol_manual_enrol_users`).
+2. El **SSO/autologin** para quien todavía quiera ver el curso embebido en la interfaz nativa de Moodle (opcional, solo para cursos legacy ya vinculados antes de la v3.0).
+3. El **registro espejo de progreso/calificaciones** vía cron de sincronización, para los cursos que sí tengan actividades reales dentro de Moodle (casos legacy).
+
+Para todo curso creado *desde* el Course Builder nuevo, el progreso, las calificaciones y los certificados se calculan **directamente en Postgres** a partir de las lecciones completadas y los resultados de quiz — sin necesidad de ida y vuelta con Moodle. Esto es estrictamente mejor: más rápido, sin dependencia de la disponibilidad de Moodle, y permite features (drip content, quizzes con banco de preguntas, certificación automática) que la interfaz nativa de Moodle no ofrece de forma flexible.
+
+`Product.moodleCourseId` se vuelve **opcional y heredado**: solo se rellena si el `super_admin` decide igualmente reflejar el curso en Moodle (por ejemplo, para hospitales que ya tienen flujos de reporting corporativo apuntando a Moodle). El campo nuevo `Product.contentSource` (`enum: 'native' | 'moodle_legacy'`) determina cuál motor de progreso manda.
+
+### 19.2 Modelo de datos — Course Builder
+
+```prisma
+enum ContentSource {
+  native        // contenido vive en Postgres (Course Builder) — default para todo curso nuevo
+  moodle_legacy // contenido vive en Moodle (cursos creados antes de v3.0, o vinculados a propósito)
+}
+
+enum LessonType {
+  video
+  text
+  quiz
+  resource // descargable (PDF, slides) sin progreso propio, marca "visto" al abrir
+}
+
+model Course {
+  id              String   @id @default(cuid())
+  productId       String   @unique
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  contentSource   ContentSource @default(native)
+  language        String   @default("es")
+  estimatedHours  Float?
+  passingScorePct Int      @default(70) // mínimo para aprobar quizzes y obtener certificado
+  certificateEnabled Boolean @default(true)
+  modules         Module[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([productId])
+}
+
+model Module {
+  id          String   @id @default(cuid())
+  courseId    String
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title       String
+  order       Int
+  // Drip content: si releaseAfterDays no es null, el módulo se desbloquea
+  // N días después de la fecha de inscripción del estudiante, no antes.
+  releaseAfterDays Int?
+  lessons     Lesson[]
+
+  @@index([courseId, order])
+}
+
+model Lesson {
+  id          String     @id @default(cuid())
+  moduleId    String
+  module      Module     @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  type        LessonType
+  title       String
+  order       Int
+  // Para type=video: id del video en Cloudflare Stream (ver §19.4), nunca una URL de R2.
+  streamVideoId    String?
+  videoDurationSec Int?
+  // Para type=text: contenido enriquecido (Markdown/HTML saneado, nunca HTML crudo del cliente)
+  textContent      String?  @db.Text
+  // Para type=resource: referencia al archivo en R2 bucket lesson-resources/
+  resourceKey      String?
+  resourceLabel    String?
+  // Para type=quiz: 1:1 con Quiz
+  quiz             Quiz?
+  isPreview        Boolean  @default(false) // visible sin comprar, para marketing del curso
+  completions      LessonCompletion[]
+
+  @@index([moduleId, order])
+}
+
+model Quiz {
+  id              String   @id @default(cuid())
+  lessonId        String   @unique
+  lesson          Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  shuffleQuestions Boolean @default(true)
+  maxAttempts     Int?     // null = ilimitado
+  timeLimitSec    Int?     // null = sin límite
+  questions       QuizQuestion[]
+  attempts        QuizAttempt[]
+}
+
+enum QuestionType {
+  single_choice
+  multiple_choice
+  true_false
+}
+
+model QuizQuestion {
+  id          String       @id @default(cuid())
+  quizId      String
+  quiz        Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  type        QuestionType
+  prompt      String       @db.Text
+  order       Int
+  options     QuizOption[]
+  explanation String?      @db.Text // se muestra al estudiante tras responder, sea correcto o no
+}
+
+model QuizOption {
+  id          String       @id @default(cuid())
+  questionId  String
+  question    QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  label       String
+  isCorrect   Boolean      @default(false)
+  order       Int
+}
+
+model QuizAttempt {
+  id          String   @id @default(cuid())
+  quizId      String
+  quiz        Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  userId      String
+  scorePct    Float
+  passed      Boolean
+  answers     Json     // snapshot de respuestas dadas, para auditoría/disputas
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+
+  @@index([quizId, userId])
+}
+
+model LessonCompletion {
+  id          String   @id @default(cuid())
+  lessonId    String
+  lesson      Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  userId      String
+  completedAt DateTime @default(now())
+
+  @@unique([lessonId, userId])
+  @@index([userId])
+}
+```
+
+**Cálculo de progreso (`Enrollment.progressPct`) para `contentSource: native`:** `count(LessonCompletion del usuario) / count(Lesson del curso) * 100`, recalculado en la misma Server Action que marca una lección como completada — no requiere cron ni sync externo.
+
+**Drip content (`Module.releaseAfterDays`):** un módulo con `releaseAfterDays: 7` se muestra bloqueado (con fecha de desbloqueo visible) hasta que `Enrollment.createdAt + 7 días` haya pasado. Igual que el patrón estándar de la industria (Kajabi, Teachable, LearnDash) — confirmado como expectativa básica de cualquier plataforma de cursos en 2026.
+
+### 19.3 RLS — nuevas policies requeridas
+
+Toda tabla nueva con relación directa o indirecta a `userId` necesita policy. Como mínimo:
+- `QuizAttempt`: un usuario solo ve/crea sus propios intentos (`userId = requesting_user_id()`); `super_admin` e instructor propietario del curso pueden leer todos los intentos de su curso (para analítica).
+- `LessonCompletion`: mismo patrón.
+- `Course`/`Module`/`Lesson`/`Quiz`/`QuizQuestion`/`QuizOption`: de **escritura** solo para el `vendor`/`super_admin` propietario del `Product` asociado; de **lectura** pública si el `Product.published = true`, o restringida al propietario si está en borrador.
+
+Documenta el conteo final de policies nuevas en `PROGRESS.md` cuando se implementen — no asumas un número fijo aquí, **cuéntalas en el momento de escribir las migraciones**.
+
+### 19.4 Video — Cloudflare Stream (reemplaza cualquier intento de servir video desde R2)
+
+**Por qué no R2 para video:** R2 es storage de objetos plano — serviría el archivo `.mp4` completo como descarga directa, sin adaptar la calidad a la conexión del estudiante y, más importante, sin ninguna protección real contra descarga/redistribución. Para un catálogo de cursos pagos esto es inaceptable: cualquiera con el enlace firmado podría descargar el máster completo.
+
+**Cloudflare Stream** (mismo proveedor que ya usamos para R2, una sola cuenta) resuelve esto de forma nativa:
+- Transcodifica automáticamente a HLS adaptativo (varias calidades, el reproductor elige según el ancho de banda).
+- Entrega mediante **signed URLs** (tokens RS256 con expiración) — el manifiesto y los segmentos de video solo se sirven con un token válido, nunca como archivo descargable directo.
+- `requireSignedURLs: true` + `allowedOrigins: ["medicamentum360.com"]` bloquea hotlinking y reproducción fuera del dominio.
+- Soporta upload directo desde el navegador del instructor (Direct Creator Upload) — el archivo de video nunca pasa por el servidor Next.js, evitando timeouts y uso de memoria en uploads de varios GB.
+
+```ts
+// lib/video/stream-client.ts
+const CF_API = `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_STREAM_ACCOUNT_ID}/stream`;
+
+export async function createDirectUploadUrl(maxDurationSeconds = 3600) {
+  const res = await fetch(`${CF_API}/direct_upload`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.CLOUDFLARE_STREAM_API_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      maxDurationSeconds,
+      requireSignedURLs: true,
+      allowedOrigins: [new URL(process.env.BETTER_AUTH_URL!).hostname],
+    }),
+  });
+  const data = await res.json();
+  // data.result.uploadURL → el navegador del instructor sube el archivo directo aquí
+  // data.result.uid → streamVideoId, se persiste en Lesson.streamVideoId
+  return data.result as { uploadURL: string; uid: string };
+}
+
+export async function getSignedPlaybackToken(streamVideoId: string, expiresInSeconds = 3600) {
+  // Firma con la signing key propia (RS256) — no requiere llamada de red, más rápido
+  // Implementación real usa una librería JWT con CLOUDFLARE_STREAM_SIGNING_KEY_PEM
+  // y CLOUDFLARE_STREAM_SIGNING_KEY_ID como `kid` del header.
+}
+```
+
+**Flujo de upload desde el Course Builder (ver `BACKEND.md §16` para el detalle de Server Actions):**
+1. Instructor arrastra el archivo de video en el editor de lección.
+2. El cliente pide a una Server Action `getVideoUploadUrl()` la URL de Direct Upload.
+3. El navegador sube el archivo **directo a Cloudflare**, con barra de progreso real (no a través de Next.js).
+4. Cloudflare notifica vía webhook (`POST /api/webhooks/cloudflare-stream`) cuando termina de transcodificar.
+4. `Lesson.streamVideoId` se persiste; el estado de la lección pasa de `processing` a `ready`.
+5. Si el video tarda en procesar, la UI muestra "Procesando video..." con polling — mismo patrón ya usado para el acceso post-pago (`FLUJOS.md §6`).
+
+**Costo aproximado de referencia (verificado, junio 2026):** Cloudflare Stream cobra ~$5 por cada 1.000 minutos almacenados y ~$1 por cada 1.000 minutos entregados — sin fees de egress separados. Para un catálogo de cursos médicos de duración moderada esto es predecible y barato comparado con montar un pipeline propio de FFmpeg + S3 + CloudFront.
+
+---
+
+## 20. Marketplace Multi-Vendor
+
+### 20.1 Qué cambia respecto al marketplace actual
+
+Hasta ahora todos los productos del marketplace los crea el `super_admin` de Medicamentum360. La v3.0 abre la plataforma para que **terceros** — instructores médicos independientes, estudios de VR, organizaciones aliadas — puedan crear y vender sus propios productos (cursos y/o experiencias VR) en el mismo marketplace, bajo revisión editorial y reteniendo Medicamentum360 una comisión por venta.
+
+Esto sigue el patrón estándar de plataformas como Udemy/Skillshare (marketplace abierto con revisión) en vez del patrón Teachable/Kajabi (cada creador con su propio sitio aislado) — decisión consciente porque el valor de Medicamentum360 está en ser **el** lugar donde hospitales y profesionales de salud en Colombia buscan formación, no en que cada instructor tenga su micrositio.
+
+### 20.2 Modelo de datos — Vendor
+
+```prisma
+enum VendorStatus {
+  pending_kyc     // se registró, falta completar datos fiscales/bancarios
+  pending_review  // datos completos, esperando aprobación de super_admin
+  active          // aprobado, puede publicar productos
+  suspended       // pausado por incumplimiento o a petición propia
+}
+
+model Vendor {
+  id              String       @id @default(cuid())
+  userId          String       @unique
+  user            User         @relation(fields: [userId], references: [id])
+  displayName     String       // nombre público en el marketplace (puede no ser el nombre legal)
+  bio             String?      @db.Text
+  status          VendorStatus @default(pending_kyc)
+  // Datos fiscales — SIEMPRE en vendor-documents/ (R2, privado, nunca público)
+  taxIdType       String?      // NIT, CC, pasaporte si es extranjero
+  taxIdNumber     String?
+  taxDocumentKey  String?      // certificado bancario / RUT subido, key en R2
+  bankAccountInfo Json?        // cifrado a nivel de aplicación antes de persistir — ver BACKEND.md §18.1
+  commissionPct   Float        @default(20) // hereda MARKETPLACE_COMMISSION_PCT, puede negociarse por vendor
+  approvedAt      DateTime?
+  approvedBy      String?      // userId del super_admin que aprobó
+  products        Product[]
+  payouts         Payout[]
+  createdAt       DateTime     @default(now())
+
+  @@index([status])
+}
+
+model Payout {
+  id          String       @id @default(cuid())
+  vendorId    String
+  vendor      Vendor       @relation(fields: [vendorId], references: [id])
+  periodStart DateTime
+  periodEnd   DateTime
+  grossAmount Int          // en centavos COP, suma de ventas del periodo
+  commissionAmount Int     // lo que retiene Medicamentum360
+  netAmount   Int          // lo que se paga al vendor
+  status      PayoutStatus @default(pending)
+  wompiPayoutRef String?
+  paidAt      DateTime?
+  createdAt   DateTime     @default(now())
+
+  @@index([vendorId, status])
+}
+
+enum PayoutStatus {
+  pending
+  processing
+  paid
+  failed
+}
+```
+
+`Product` gana dos campos nuevos: `vendorId String?` (null = producto propio de Medicamentum360, igual que hoy) y `reviewStatus` (`enum: 'draft' | 'pending_review' | 'approved' | 'rejected'`) — independiente de `published`, porque un producto puede estar `approved` pero el vendor todavía no decide publicarlo.
+
+**Por qué el cifrado de `bankAccountInfo` es a nivel de aplicación y no solo RLS:** RLS protege contra otros *usuarios* leyendo la fila vía Postgres, pero no contra un acceso directo a la base de datos (backup filtrado, dump, admin malicioso). Datos bancarios son sensibles incluso para el `super_admin` casual — solo el flujo de payout automatizado necesita desencriptarlos, nunca una pantalla de admin los muestra en claro. Ver `BACKEND.md §18.1` para la implementación con una librería de cifrado simétrico (AES-256-GCM) con la clave en variable de entorno separada (`VENDOR_BANK_ENCRYPTION_KEY`, nunca la misma que `BETTER_AUTH_SECRET`).
+
+### 20.3 Comisión y payouts
+
+- `MARKETPLACE_COMMISSION_PCT` (env, default 20%) es el valor por defecto al crear un `Vendor`; `Vendor.commissionPct` permite excepciones negociadas (ej. un estudio VR grande con volumen, 15%).
+- El payout es **mensual por defecto** (`periodStart`/`periodEnd` de 1 mes), calculado por un cron job que suma `Order.status = paid` del periodo para productos de ese vendor, resta la comisión, y crea el registro `Payout` en `pending`.
+- El `super_admin` revisa y aprueba el lote de payouts antes de que se dispare el pago real — **nunca automático en el primer ciclo de vida del feature** (ver `AGENTS.md §8`, este es uno de los puntos de parada obligatorios).
+- Pago real vía transferencia Wompi a la cuenta bancaria del vendor, usando `WOMPI_VENDOR_PAYOUT_KEY` (credencial separada de la de cobro a estudiantes).
+
+### 20.4 Flujo editorial — revisión antes de publicar
+
+Ningún producto de un `vendorId` no nulo llega a `published: true` sin pasar por `reviewStatus: approved`. El panel de `super_admin` gana una bandeja `/admin/review-queue` (ver `UX_UI.md §3.14`) donde se revisa: calidad del contenido, que el video efectivamente cargue, que el quiz tenga al menos una pregunta con respuesta correcta marcada, y que la información de precio/cupo sea coherente. Ver `FLUJOS.md §16` para el flujo completo paso a paso.
+
+---
+
+## 21. Roadmap de mejoras identificadas (no bloqueantes, para evaluar por fase)
+
+Estas son mejoras que la investigación de mercado (Kajabi, Teachable, Podia, LearnDash, Moodle — junio 2026) sugiere como expectativa estándar de la industria de e-learning, que **no están en el alcance mínimo de la Fase 6.5** pero vale la pena dejar registradas para no perderlas de vista en fases posteriores:
+
+- **Subtítulos automáticos/traducción de video:** varios competidores (Teachable) ofrecen subtítulos auto-generados en decenas de idiomas. Cloudflare Stream no lo incluye nativamente — evaluaría un paso adicional de transcripción (ej. Whisper local o API externa) si el catálogo crece a audiencia bilingüe/internacional.
+- **Banco de preguntas reutilizable entre quizzes:** hoy `QuizQuestion` pertenece a un único `Quiz`. Si varios cursos comparten temario base (ej. distintos módulos de farmacología), un banco de preguntas compartido evitaría reescribir contenido.
+- **Cohortes con fecha de inicio fija** (vs. self-paced): Kajabi y Podia distinguen "Evergreen" de "Cohort Courses" con sesiones en vivo programadas. Útil si Medicamentum360 quiere ofrecer programas con interacción en vivo (webinars vía Zoom/Meet embebido) además del contenido grabado.
+- **Vista previa gratuita del curso (`Lesson.isPreview`):** ya está en el modelo de datos de §19.2 porque es trivial de incluir desde el inicio, pero la UI de marketplace (mostrar 1-2 lecciones gratis antes de comprar) es trabajo de UX pendiente — ver `UX_UI.md §3.4`.
+- **Afiliados/referidos para instructores:** Teachable y Kajabi incluyen programas de afiliados nativos. Quedaría como extensión natural del modelo `Vendor` si se decide impulsar el crecimiento por recomendación.
+- **App móvil dedicada / PWA reforzada:** ya está contemplado parcialmente en `PLAN.md` Fase 13 (PWA offline para hospitales con baja conectividad) — el roadmap de mercado confirma que es una expectativa creciente, no un nice-to-have marginal.

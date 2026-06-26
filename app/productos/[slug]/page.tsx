@@ -6,14 +6,6 @@ import { RelatedProducts } from '@/components/marketplace/RelatedProducts';
 import { VRViewer } from '@/components/marketplace/VRViewer';
 import { getProductBySlug } from '@/lib/actions/products';
 
-function formatPrice(cents: number): string {
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency: 'COP',
-    minimumFractionDigits: 0,
-  }).format(cents);
-}
-
 function getTypeLabel(type: string): string {
   switch (type) {
     case 'course': return 'Curso';
@@ -83,6 +75,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
           {/* Right Column — Sticky Info Panel */}
           <div className="lg:col-span-1">
             <ProductInfoPanel
+              productId={product.id}
               product={{
                 title: product.title,
                 type: product.type,
@@ -95,7 +88,6 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
                 instructor: 'Instructor',
                 duration: 'Variable',
               }}
-              formatPrice={formatPrice}
             />
           </div>
         </div>

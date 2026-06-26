@@ -1,6 +1,6 @@
 # FRONTEND_PATTERNS — Patrones de implementación
 **Fuente: wasp-lang/open-saas (adaptado a Next.js App Router)**
-Versión: 1.1 · Fecha: 2026-06-22 · Actualizado con implementación real
+Versión: 2.0 · Fecha: 2026-06-24 · Añade patrones de Course Builder y Marketplace Multi-Vendor (§10)
 
 ---
 
@@ -496,6 +496,15 @@ npm install clsx tailwind-merge tailwindcss-animate lucide-react vanilla-cookiec
 npm install -D tailwindcss@^4 @tailwindcss/forms @tailwindcss/typography
 npx shadcn@latest init
 npx shadcn@latest add button dialog sheet progress dropdown-menu toast avatar card input label select checkbox switch separator
+
+# Nuevo en v2.0 — Course Builder (§10)
+npm install @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities  # drag & drop accesible (módulos/lecciones)
+npm install hls.js                                              # reproducción de video HLS de Cloudflare Stream
+npx shadcn@latest add accordion radio-group textarea             # temario expandible, editor de quiz
+# Editor de texto enriquecido para lecciones tipo "Texto" — evaluar entre Tiptap (más control) o
+# un editor más simple si el alcance real solo necesita negrita/listas/encabezados (decidir en Fase 6.5).
+npm install sanitize-html                                        # saneamiento de HTML antes de persistir Lesson.textContent
+npm install -D @types/sanitize-html
 ```
 
 ---
@@ -509,8 +518,10 @@ Patrón implementado en `middleware.ts` — valida sesión + role antes de permi
 ```ts
 // middleware.ts
 const protectedRoutes = ['/dashboard', '/configuracion', '/checkout', '/mis-cursos'];
-const orgRoutes = ['/org'];         // requiere hospital_admin o superior
-const adminRoutes = ['/admin'];     // requiere super_admin
+const orgRoutes = ['/org'];           // requiere hospital_admin o superior
+const adminRoutes = ['/admin'];       // requiere super_admin
+const instructorRoutes = ['/instructor']; // requiere super_admin O Vendor.status === 'active'
+const vendorOnboardingRoutes = ['/vender']; // requiere solo sesión — el propio flujo gestiona el estado
 
 type Role = 'super_admin' | 'hospital_admin' | 'student';
 
@@ -533,11 +544,13 @@ function hasRequiredRole(userRole: Role | undefined, requiredRole: Role): boolea
 4. Valida jerarquía de roles: `super_admin` > `hospital_admin` > `student`.
 5. Si no tiene permiso → redirect a `/dashboard`.
 
-**Matcher:** `/dashboard/:path*`, `/configuracion/:path*`, `/checkout/:path*`, `/mis-cursos/:path*`, `/org/:path*`, `/admin/:path*`.
+**Nota sobre `/instructor` — Vendor no es parte de `roleHierarchy`:** el acceso a `/instructor` no depende del `role` jerárquico del usuario sino de si tiene un registro `Vendor` con `status: active` (o si es `super_admin`, que siempre tiene acceso). Es una capacidad ortogonal al rol, no un nivel más de la jerarquía — un `student` normal puede convertirse en `vendor` sin dejar de ser `student`. El middleware para esta ruta hace una verificación adicional (`getVendorStatus(session.user.id)`) en vez de comparar contra `roleHierarchy`. Si el usuario no tiene `Vendor` o no está `active`, redirige a `/vender` en vez de a `/dashboard` — para guiarlo al onboarding en vez de simplemente negarle el acceso.
+
+**Matcher:** `/dashboard/:path*`, `/configuracion/:path*`, `/checkout/:path*`, `/mis-cursos/:path*`, `/org/:path*`, `/admin/:path*`, `/instructor/:path*`.
 
 ### 8.2 NavBar dinámico por rol
 
-El NavBar muestra diferentes elementos según el estado de autenticación y el rol del usuario:
+El NavBar muestra diferentes elementos según el estado de autenticación, el rol del usuario, y (nuevo) si tiene un perfil de vendor:
 
 ```tsx
 // Patrón de items condicionales
@@ -548,6 +561,8 @@ const navigationItems = [
   { name: 'Productos', href: '/productos', showOn: 'always' },
   { name: 'Mi Aprendizaje', href: '/dashboard', showOn: 'authenticated' },
   { name: 'Empleados', href: '/org/employees', showOn: 'hospital_admin' },
+  { name: 'Mi Panel de Creador', href: '/instructor', showOn: 'vendor_active' },
+  { name: 'Completar mi perfil de creador', href: '/vender', showOn: 'vendor_pending' },
 ];
 ```
 
@@ -558,8 +573,12 @@ const navigationItems = [
 | Autenticado (student) | Logo, Mi Aprendizaje, Marketplace, [Tema], [Avatar ▾] |
 | Autenticado (hospital_admin) | Logo, Mi Aprendizaje, Marketplace, Empleados, [Tema], [Avatar ▾] |
 | Autenticado (super_admin) | Logo, Mi Aprendizaje, Marketplace, Empleados, Admin, [Tema], [Avatar ▾] |
+| Autenticado + `Vendor.status: active` | + "Mi Panel de Creador" en cualquiera de los anteriores |
+| Autenticado + `Vendor.status` pending_kyc/pending_review | + "Completar mi perfil de creador" en vez del anterior |
 
-**En `/productos`** (marketplace):搜索 bar visible en NavBar (`w-[180px]`, expande a `max-w-none` on `group-focus-within`, transición 300ms). Se sincroniza con `?search=` query param.
+El estado de vendor se obtiene una sola vez junto con la sesión (no es una llamada extra) — se añade al payload de sesión de Better Auth como campo derivado, igual patrón que ya se usa para `role`/`organizationId`.
+
+**En `/productos`** (marketplace): search bar visible en NavBar (`w-[180px]`, expande a `max-w-none` on `group-focus-within`, transición 300ms). Se sincroniza con `?search=` query param.
 
 **Comportamiento scroll:**
 - Landing: full-width → píldora centrada con blur al hacer scroll.
@@ -592,7 +611,9 @@ export async function createInvitation(email: string) {
 }
 ```
 
-**Nota sobre tipos:** Better Auth no infiere los campos adicionales (`role`, `organizationId`) en el tipo de sesión. Se usa `(session.user as any).role` como patrón temporal hasta que se extienda el tipo de Better Auth o se use un tipo custom.
+**Patrón equivalente para Course Builder / Vendor (`lib/actions/course-builder/*`, `lib/actions/vendor/*`):** en vez de validar contra `role`, valida contra ownership real del recurso (`assertCourseOwner`, `assertOwnVendorProfile` — ver `BACKEND.md §15` y `§17`). Esto es deliberado: un `vendor` nunca debe poder editar el curso de otro `vendor` solo por tener el mismo rol jerárquico — la comparación correcta es "¿este `Course`/`Vendor` pertenece a este usuario, o es `super_admin`?", no "¿qué rol tiene?".
+
+**Nota sobre tipos:** Better Auth no infiere los campos adicionales (`role`, `organizationId`, `vendorId`, `vendorStatus`) en el tipo de sesión. Se usa `(session.user as any).role` como patrón temporal hasta que se extienda el tipo de Better Auth o se use un tipo custom.
 
 ---
 
@@ -702,3 +723,167 @@ Donde el usuario decide → lento (hold-to-delete: 2s). Donde el sistema respond
 | Hover sin media query | `@media (hover: hover) and (pointer: fine)` |
 | Keyframes en elementos rápidos | CSS transitions |
 | Misma velocidad enter/exit | Exit más rápido que enter |
+
+---
+
+## 10. Patrones de componentes — Course Builder y Marketplace Multi-Vendor (nuevo en v2.0)
+
+Estos componentes son nuevos pero **no introducen ningún patrón visual, de animación o de interacción distinto a lo ya establecido en §1-9** — reutilizan los mismos tokens de color, las mismas reglas de animación (`transform`/`opacity` únicamente, `ease-out`, 150-250ms) y los mismos componentes ShadCN ya inventariados en §6.
+
+### 10.1 `LessonTree` — árbol reordenable de módulos/lecciones
+
+Usa una librería de drag & drop accesible (ej. `@dnd-kit/core`, que soporta teclado nativamente vía `KeyboardSensor`) en vez de implementar drag & drop manual con eventos de mouse — necesario para cumplir la accesibilidad por teclado exigida en `UX_UI.md §5`.
+
+```tsx
+// components/instructor/lesson-tree.tsx
+import { DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors, closestCenter } from '@dnd-kit/core';
+import { SortableContext, useSortable, verticalListSortingStrategy, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+function SortableLesson({ lesson }: { lesson: Lesson }) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: lesson.id });
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }} // SOLO transform — regla §9.6
+      {...attributes}
+      {...listeners}
+      className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted card-hover"
+    >
+      <LessonTypeIcon type={lesson.type} className="text-muted-foreground size-4" />
+      <span className="truncate text-sm">{lesson.title}</span>
+    </li>
+  );
+}
+
+export function LessonTree({ modules, onReorder }: LessonTreeProps) {
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }) // Alt+↑/↓ — accesibilidad obligatoria
+  );
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onReorder}>
+      {/* ... mapeo de módulos, cada uno con su SortableContext de lecciones ... */}
+    </DndContext>
+  );
+}
+```
+
+**Estado de guardado:** optimistic UI inmediato en el cliente al soltar; la Server Action (`reorderLessons`) se llama en segundo plano. Si falla, revertir el estado local + toast de error — nunca dejar el árbol visualmente reordenado si el servidor rechazó el cambio.
+
+### 10.2 `VideoUploadDropzone` — subida directa a Cloudflare Stream
+
+```tsx
+// components/instructor/video-upload-dropzone.tsx
+'use client';
+import { useState, useCallback } from 'react';
+import { getVideoUploadUrl } from '@/lib/actions/course-builder/video-upload';
+
+type UploadState = 'idle' | 'uploading' | 'processing' | 'ready' | 'error';
+
+export function VideoUploadDropzone({ lessonId }: { lessonId: string }) {
+  const [state, setState] = useState<UploadState>('idle');
+  const [progress, setProgress] = useState(0);
+
+  const handleFile = useCallback(async (file: File) => {
+    setState('uploading');
+    const { uploadURL } = await getVideoUploadUrl(lessonId, Math.ceil(file.size / (1024 * 1024)) * 2);
+
+    const xhr = new XMLHttpRequest();
+    xhr.upload.onprogress = (e) => setProgress(Math.round((e.loaded / e.total) * 100));
+    xhr.onload = () => setState(xhr.status === 200 ? 'processing' : 'error');
+    xhr.onerror = () => setState('error');
+
+    const formData = new FormData();
+    formData.append('file', file);
+    xhr.open('POST', uploadURL);
+    xhr.send(formData);
+    // Tras 'processing', un polling corto (cada 3s) a getVideoStatus() o,
+    // preferentemente, un listener de Server-Sent Events / revalidación al
+    // recibir el webhook de Cloudflare Stream, actualiza a 'ready'.
+  }, [lessonId]);
+
+  return (
+    <div
+      className="rounded-lg border-2 border-dashed border-border p-8 text-center transition-colors hover:border-primary"
+      onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }}
+      onDragOver={(e) => e.preventDefault()}
+    >
+      {state === 'idle' && <p className="text-muted-foreground text-sm">Arrastra un video o haz clic para subir</p>}
+      {state === 'uploading' && <ProgressBar value={progress} label={`Subiendo... ${progress}%`} />}
+      {state === 'processing' && <p className="text-muted-foreground text-sm animate-pulse">Procesando video...</p>}
+      {state === 'error' && <p className="text-destructive text-sm">Error al subir. Intenta de nuevo.</p>}
+    </div>
+  );
+}
+```
+
+Reutiliza el componente `ProgressBar` ya inventariado (`UX_UI.md §7`) — no se crea una barra de progreso nueva solo para este caso.
+
+### 10.3 `QuizEditor` — preguntas y opciones
+
+Patrón de formulario dinámico con ShadCN `RadioGroup`/`Checkbox` según `QuestionType`:
+
+```tsx
+// components/instructor/quiz-editor.tsx
+function QuestionEditor({ question, onChange }: { question: QuizQuestion; onChange: (q: QuizQuestion) => void }) {
+  const handleCorrectChange = (optionId: string) => {
+    // Para single_choice: marcar una opción como correcta desmarca automáticamente las demás
+    const updatedOptions = question.options.map((opt) => ({
+      ...opt,
+      isCorrect: question.type === 'single_choice' ? opt.id === optionId : opt.isCorrect,
+    }));
+    onChange({ ...question, options: updatedOptions });
+  };
+
+  return (
+    <Card className="card-hover">
+      <CardContent className="space-y-3 pt-4">
+        <Textarea
+          placeholder="Escribe la pregunta..."
+          value={question.prompt}
+          onChange={(e) => onChange({ ...question, prompt: e.target.value })}
+        />
+        {question.type === 'single_choice' ? (
+          <RadioGroup value={question.options.find((o) => o.isCorrect)?.id} onValueChange={handleCorrectChange}>
+            {question.options.map((opt) => <OptionRow key={opt.id} option={opt} />)}
+          </RadioGroup>
+        ) : (
+          question.options.map((opt) => (
+            <div key={opt.id} className="flex items-center gap-2">
+              <Checkbox checked={opt.isCorrect} onCheckedChange={() => handleCorrectChange(opt.id)} />
+              <OptionRow option={opt} />
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+```
+
+### 10.4 `VendorBadge` — atribución discreta en marketplace
+
+```tsx
+// components/marketplace/vendor-badge.tsx
+export function VendorBadge({ vendor }: { vendor: { displayName: string; slug: string } }) {
+  return (
+    <a href={`/marketplace/creador/${vendor.slug}`} className="text-muted-foreground text-xs hover:text-foreground hover:underline">
+      por: {vendor.displayName}
+    </a>
+  );
+}
+```
+
+Deliberadamente `text-xs` y `text-muted-foreground` — nunca debe competir visualmente con el título del producto ni con `RatingStars`, siguiendo la jerarquía tipográfica ya establecida en §1.
+
+### 10.5 Checklist de verificación para componentes del Course Builder
+
+Antes de dar por terminado cualquier componente de esta sección, confirma:
+- [ ] Drag & drop funciona también con teclado (`KeyboardSensor` o equivalente).
+- [ ] Ninguna animación usa `width`/`height`/`margin` — solo `transform`/`opacity` (regla §9.6).
+- [ ] El estado de carga (`uploading`/`processing`) usa skeleton/spinner consistente con el resto del sistema, nunca un spinner genérico de librería sin estilizar.
+- [ ] Colores via tokens semánticos (`bg-primary`, `text-destructive`, etc.) — cero hex hardcodeado, igual regla que el resto del proyecto (`AGENTS.md §4.2`).
+- [ ] El componente respeta `prefers-reduced-motion` si tiene alguna animación de entrada/salida.

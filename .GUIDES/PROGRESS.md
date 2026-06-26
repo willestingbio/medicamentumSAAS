@@ -1,6 +1,6 @@
 # PROGRESS — Medicamentum360
 **Estado actual del plan de desarrollo**
-Actualizado: 2026-06-22 (post-limpieza InsForge/Vercel)
+Actualizado: 2026-06-25 (Fase 4 — Carrito/Checkout completada; fixes de build/lint/test; ver Fase 6.5 — Course Builder & Marketplace Multi-Vendor en `PLAN.md` v4.0)
 
 ---
 
@@ -10,9 +10,13 @@ Actualizado: 2026-06-22 (post-limpieza InsForge/Vercel)
 |---|---|
 | Fase 1 — Fundaciones | ✅ COMPLETA |
 | Fase 2 — Landing + Auth | ✅ COMPLETA |
-| Fase 2.5 — CI/CD + VPS | ~EN PROGRESO (CI local listo, limpieza pendiente) |
+| Fase 2.5 — CI/CD + VPS | ~EN PROGRESO (CI local listo, falta provisionar VPS real) |
 | Fase 3 — Marketplace | ✅ COMPLETA |
-| Fase 4-13 | ⬜ No iniciadas |
+| Fase 4 — Carrito + Checkout (Wompi) | ✅ COMPLETA |
+| Fase 5 — Dashboard del Estudiante | ✅ COMPLETA (dashboard, configuracion, cursos, reproductor leccion, VR keys, 2FA, tests, Google Calendar OAuth, Course Builder models, lesson player, mis-cursos, moodle-sync) |
+| Fase 6 — Integración Moodle (alcance reducido, ver `PLAN.md` Fase 6) | ⬜ No iniciada |
+| Fase 6.5 — Course Builder & Marketplace Multi-Vendor (NUEVO) | ⬜ No iniciada |
+| Fase 7-13 | ⬜ No iniciadas |
 
 ---
 
@@ -88,6 +92,10 @@ Actualizado: 2026-06-22 (post-limpieza InsForge/Vercel)
 - [x] **GitHub Actions deploy workflow** — `.github/workflows/deploy.yml` ✅
 - [x] **Script de backups** — `scripts/backup-db.sh` ✅
 - [x] **`.env.production.example`** — template con todas las variables ✅
+- [x] **Instalar `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner`** — fix TypeScript ✅
+- [x] **Crear `.eslintrc.json`** + instalar `eslint` + `eslint-config-next` — fix lint ✅
+- [x] **Fix `vitest.config.ts`** — `pool: 'threads'` para evitar timeout jsdom ✅
+- [x] **Fix `NavBar.tsx`** — `<a>` → `<Link>` (error ESLint) ✅
 - [ ] **Provisionar VPS** (Hetzner CX22 recomendado)
 - [ ] **Setup VPS**: Docker, UFW, usuario deploy, SSH keys
 - [ ] **Secrets en GitHub**: VPS_HOST, VPS_USER, VPS_SSH_KEY
@@ -108,22 +116,92 @@ Actualizado: 2026-06-22 (post-limpieza InsForge/Vercel)
 
 ---
 
-## Fase 4 — Carrito + Checkout (Wompi) — ⬜ No iniciada
-**Bloqueante:** Fase 2.5 completa (VPS + RLS validado)
+## Fase 4 — Carrito + Checkout (Wompi) — ✅ COMPLETA
 
-- [ ] Carrito popover (persistencia guest + merge al login)
-- [ ] Checkout con datos DIAN, widget Wompi
-- [ ] Webhook HMAC + idempotencia (`/api/webhooks/wompi`)
-- [ ] Pantalla éxito + email confirmación (Brevo)
-- [ ] Cupones/descuentos
-- [ ] Tabla `employee_assignments`
-- [ ] Historial de órdenes
+- [x] Schema Prisma: Order billing fields, Coupon, EmployeeAssignment, wompiReference (`prisma db push` applied)
+- [x] Server Actions: `lib/actions/cart.ts` — addToCart, removeFromCart, clearCart, mergeGuestCart, getCart, getCartSummary
+- [x] Server Actions: `lib/actions/checkout.ts` — createOrderFromCart, getCheckoutSummary, getOrderById, getOrderHistory, processWompiPayment
+- [x] Componentes: `CartPopover`, `CartItemRow` — popover del carrito con items, totales, links a checkout
+- [x] NavBar: integrado `CartPopover` (desktop + mobile)
+- [x] ProductCard: botón "Agregar al carrito" funcionando con `addToCart`
+- [x] ProductInfoPanel: "Comprar ahora" + "Agregar al carrito" funcionando
+- [x] Página `/checkout`: formulario facturación → WompiWidget embebido (Checkout Brick)
+- [x] Página `/checkout/success`: confirmación de compra con resumen
+- [x] Página `/orders`: historial de compras del usuario
+- [x] `lib/wompi.ts`: WompiClient con fetch directo, HMAC validation, generateOrderReference
+- [x] `components/checkout/WompiWidget.tsx`: Widget embebido con Checkout Brick de Wompi
+- [x] `app/api/wompi/acceptance-tokens/route.ts`: API para tokens de aceptación
+- [x] Webhook `/api/webhooks/wompi`: HMAC + idempotencia + enrollment Moodle + email Brevo
+- [x] `lib/email/brevo.ts`: sendOrderConfirmationEmail, sendWelcomeEmail
+- [x] Componente `Badge` (ui) + Toaster (sonner) integrado en layout
+- [x] `DEFAULT_TAX_RATE=0.19` configurable via env
+- [x] Tests HMAC validation, reference generation, idempotency logic (10/10 PASS)
 
 ---
 
-## Fase 5-13 — ⬜ No iniciadas
+## Fase 5-6 — ⬜ No iniciadas
 
-*(sin cambios respecto al PLAN.md actual)*
+### Fase 5 — Dashboard del Estudiante — ✅ COMPLETA
+
+**Completado en sesiones anteriores:**
+- [x] Fix Prisma schema: `Certificate` ahora tiene `@relation` a `Product` + `@@unique([userId, productId])`
+- [x] Dependencias: `jspdf` (PDF generation), `@radix-ui/react-progress`, `@radix-ui/react-tabs`, `@radix-ui/react-separator`
+- [x] ShadCN components: `skeleton.tsx`, `separator.tsx`, `progress.tsx`, `tabs.tsx`
+- [x] Route group `(dashboard)` con layout protegido que valida sesion
+- [x] Server Actions: `lib/actions/dashboard.ts`, `lib/actions/certificates.ts`, `lib/actions/profile.ts`, `lib/actions/vr-keys.ts`, `lib/actions/auth-settings.ts`
+- [x] Pagina `/dashboard`: grid 2×3 con Mis Cursos (tabs: Todos/En progreso/Completados/No iniciados), Certificados, Calendario, Resumen
+- [x] Pagina `/configuracion`: grid 2 columnas con Perfil, Preferencias (tema), Historial de compras, Zona de peligro
+- [x] Componentes: `DashboardContent`, `DashboardSkeleton`, `CertificateCard`, `CalendarWidget`, `SettingsContent`, `SettingsSkeleton`
+- [x] Certificate generation: PDF con jsPDF (diseño branded) + upload a R2 + LinkedIn share URL
+
+**Completado en esta sesión (2026-06-25):**
+- [x] Fix Prisma schema: modelo `VrKey` (unique per user+product, indexed apiKey) + campos `twoFactorEnabled`/`twoFactorSecret`/`vrKeys` en User + `VrKey[]` en Product
+- [x] Dependencias adicionales: `qrcode`, `otpauth`, `jspdf`, `hls.js`
+- [x] `SecuritySettings` component — cambio de contraseña + 2FA TOTP (generar secret, verificar código, activar/desactivar)
+- [x] `VrKeysCard` component — visualizar llaves VR con reveal/copy/revoke
+- [x] `SecuritySettings` integrado en `/configuracion` page
+- [x] `VrKeysCard` integrado en dashboard page (props desde `getVrKeys()`)
+- [x] Fix `lib/actions/auth-settings.ts`: `verifyPassword`/`hashPassword` de `better-auth/crypto` (no `verify`/`hash`)
+- [x] Tests de la Fase 5: `tests/phase5.test.ts` — 21/21 PASS (VR key gen, QR payload, cert layout, 2FA TOTP, password validation, enrollment progress, product type display)
+- [x] **Prisma schema: modelos Course Builder** — `Course`, `Module`, `Lesson`, `Quiz`, `QuizQuestion`, `QuizOption`, `QuizAttempt`, `LessonCompletion` + enums `ContentSource`, `LessonType`, `QuestionType` (TRD.md §19.2) — `prisma db push` aplicado
+- [x] **Página `/dashboard/cursos/[slug]/[leccionId]`** — reproductor de lección con HLS.js, outline del curso (sidebar sticky), navegación prev/next, barra de progreso, breadcrumb
+- [x] **Componente `HlsPlayer`** — wrapper de hls.js con soporte nativo Safari, callbacks de `onProgress` y `onEnded`
+- [x] **Componente `CourseOutline`** — temario sticky con módulos colapsables, estados (✓ completada, ● actual, · pendiente, 🔒 bloqueada por drip), links a lecciones
+- [x] **Componente `LessonPlayerContent`** — layout 2 columnas (contenido + sidebar), responsive con Sheet mobile para temario
+- [x] **Server Actions: `lib/actions/course-progress.ts`** — `getCourseForPlayer`, `getLessonById`, `markLessonComplete` (con recálculo de `Enrollment.progressPct`), `getMyEnrollments`
+- [x] **Página `/mis-cursos`** — vista dedicada de cursos inscritos con tarjetas, progreso, tipo, badge de estado
+- [x] **Componente `MyCoursesContent`** — grid responsive de cursos con Progress bar, empty state con link al marketplace
+- [x] **Auto-marcar lección al 90% del video** — `HlsPlayer` llama `onProgress` → `LessonPlayerContent` detecta ≥90% → `markLessonComplete` → recalcula progreso
+- [x] **Server Actions: `lib/actions/moodle-sync.ts`** — `syncMoodleProgress` (una inscripción), `syncAllMoodleProgress` (bulk) — solo para `contentSource: moodle_legacy`
+- [x] Componente `ScrollArea` (ShadCN) — para sidebar del temario
+- [x] Middleware actualizado: `/mis-cursos` ya estaba protegido
+- [x] TypeScript: 0 errores | ESLint: 0 warnings
+- [x] **Google Calendar OAuth completo** — `app/api/auth/calendar/route.ts` (OAuth initiation), `app/api/auth/calendar/callback/route.ts` (token exchange + store), `lib/actions/calendar.ts` (`getGoogleCalendarEvents`, `getCalendarConnectionStatus`, `disconnectCalendar`), `CalendarWidget.tsx` actualizado con eventos de Google Calendar + botón conectar/desconectar + badge "Google"
+- [x] **Prisma: modelo `CalendarConnection`** — `userId` unique, `accessToken`, `refreshToken`, `calendarId`, `calendarName`, `connectedAt`; `db push` aplicado; `prisma generate` regenerado
+- [x] **`getDashboardData` ampliado** — retorna `userId` y `calendarConnected` (boolean) desde `CalendarConnection`
+- [x] **DashboardContent** — links de cursos apuntan a `/dashboard/cursos/[slug]` (reproductor) para cursos nativos; CalendarWidget recibe `userId` y `googleConnected` props
+- [x] TypeScript: 0 errores | ESLint: 0 warnings (re-verificado tras cambios)
+
+**Pendiente (para completar la fase):**
+- [x] ~~Generar migración de Prisma formal~~ — COMPLETADO: `prisma/migrations/20250101000000_init/migration.sql` (613 líneas, todas las tablas/indices/FK/enums); marcada como aplicada en DB (`npx prisma migrate status` → "Database schema is up to date!")
+
+---
+
+## Fase 6.5 — Course Builder & Marketplace Multi-Vendor — ⬜ No iniciada (NUEVO)
+**Bloqueante:** Fase 4 (checkout) y Fase 5 (dashboard del estudiante) completas. No depende de la Fase 6 (Moodle) — puede desarrollarse en paralelo.
+
+> Ver `PLAN.md` Fase 6.5 para el detalle completo de tareas. Resumen de bloques principales para seguimiento rápido:
+
+- [ ] Modelo de datos: `Course`/`Module`/`Lesson`/`Quiz`/`QuizQuestion`/`QuizOption`/`QuizAttempt`/`LessonCompletion`/`Vendor`/`Payout` + policies RLS
+- [ ] Cuenta Cloudflare Stream configurada (variables documentadas en `DEPLOY.md §16.4`, añadidas vía append — nunca sobrescribiendo `.env.production`)
+- [ ] Course Builder: panel `/instructor`, editor de curso de 3 columnas, CRUD de módulos/lecciones con drag & drop accesible
+- [ ] Subida de video a Cloudflare Stream (Direct Upload) + webhook de confirmación
+- [ ] Editor de quiz (preguntas, opciones, configuración de intentos/tiempo)
+- [ ] Reproductor de lección del estudiante (HLS firmado) + marcado de progreso + certificación automática — **reproductor base ya creado en Fase 5** (HLS.js, outline, auto-mark 90%, progreso); pendiente: signed URLs de Cloudflare Stream, componente de Quiz para el estudiante, certificación automática
+- [ ] Onboarding de vendor (`/vender`): KYC, datos bancarios cifrados, aprobación por `super_admin`
+- [ ] Flujo de revisión editorial (`/admin/review-queue`) antes de publicar productos de vendor
+- [ ] Cálculo y aprobación manual de payouts (`/admin/payouts`) — sin disparo automático de transferencias reales en esta fase
+- [ ] Suite de tests específica de la fase (ownership, idempotencia de webhook, cifrado de datos bancarios, cálculo de comisión, E2E completo)
 
 ---
 
@@ -148,3 +226,6 @@ Actualizado: 2026-06-22 (post-limpieza InsForge/Vercel)
 4. vanilla-cookieconsent: `guiOptions` para layout en v3.x
 5. `lib/rate-limit.ts`: in-memory, solo para Server Actions no-auth
 6. Better Auth rate limit: `storage: "memory"` (pendiente migrar a Redis en Fase 2.5 VPS)
+7. **Moodle Web Service API no soporta crear secciones/recursos/quizzes por API** — verificado contra documentación oficial, junio 2026. Por eso el contenido de cursos nuevos vive en Postgres propio (Fase 6.5) y no en Moodle. Ver `TRD.md §19.1` para el detalle completo de esta decisión de arquitectura.
+8. Video de lecciones vía Cloudflare Stream, no R2 — R2 queda reservado a archivos estáticos (imágenes, PDFs, modelos 3D). Ver `TRD.md §19.4`.
+9. `vitest.config.ts` requiere `pool: 'threads'` explícito — el pool por defecto causaba timeout en entorno jsdom.

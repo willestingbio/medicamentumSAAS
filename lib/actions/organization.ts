@@ -15,6 +15,11 @@ export async function linkUserToOrganization(orgCode: string) {
     return { error: 'No autenticado' };
   }
 
+  // Prevent users already in an org from switching to another
+  if ((session.user as any).organizationId) {
+    return { error: 'Ya perteneces a una organización' };
+  }
+
   try {
     const invitation = await prisma.organizationInvitation.findUnique({
       where: { orgCode },

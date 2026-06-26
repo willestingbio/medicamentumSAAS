@@ -16,7 +16,7 @@ function wrap(fn: (req: Request) => Promise<Response>): (req: Request) => Promis
       return rlsClaimsStore.run(claims, () => fn(req));
     } catch (e: any) {
       console.error('[Auth Handler Error]', e);
-      return new Response(JSON.stringify({ error: e?.message || String(e) }), {
+      return new Response(JSON.stringify({ error: 'Internal server error' }), {
         status: 500,
         headers: { 'content-type': 'application/json' },
       });

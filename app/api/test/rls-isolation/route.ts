@@ -12,6 +12,10 @@ interface TestResult {
 }
 
 export async function GET() {
+  if (process.env.NODE_ENV !== 'development') {
+    return NextResponse.json({ error: 'Only available in development mode' }, { status: 403 });
+  }
+
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) {
     return NextResponse.json({ error: 'not signed in' }, { status: 401 });

@@ -1,10 +1,17 @@
 'use client';
 
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { ShoppingCart, Star, Users, Clock, CheckCircle } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { ShoppingCart, Star, Users, Clock, CheckCircle, Check } from 'lucide-react';
+import { cn, formatPrice } from '@/lib/utils';
+import { addToCart } from '@/lib/actions/cart';
+import { incrementCartCount } from '@/components/cart/CartPopover';
+import { getGuestToken } from '@/lib/guest';
+import { toast } from 'sonner';
 
 interface ProductInfoPanelProps {
+  productId: string;
   product: {
     title: string;
     type: string;
@@ -17,12 +24,41 @@ interface ProductInfoPanelProps {
     instructor: string;
     duration: string;
   };
-  formatPrice: (cents: number) => string;
 }
 
-export function ProductInfoPanel({ product, formatPrice }: ProductInfoPanelProps) {
+export function ProductInfoPanel({ productId, product }: ProductInfoPanelProps) {
+  const router = useRouter();
   const hasDiscount = product.discountCents !== null && product.discountCents < product.priceCents;
   const spotsLeft = product.capacity ? product.capacity - product.enrolled : null;
+  const [adding, setAdding] = useState(false);
+  const [added, setAdded] = useState(false);
+
+  const handleAddToCart = async () => {
+    if (adding || added) return;
+    setAdding(true);
+    try {
+      await addToCart(productId, getGuestToken());
+      incrementCartCount();
+      window.dispatchEvent(new Event('cart-updated'));
+      setAdded(true);
+      toast.success('Agregado al carrito');
+      setTimeout(() => setAdded(false), 2000);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Error al agregar');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleBuyNow = async () => {
+    try {
+      await addToCart(productId, getGuestToken());
+      window.dispatchEvent(new Event('cart-updated'));
+      router.push('/checkout');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Error al procesar');
+    }
+  };
 
   return (
     <div className="sticky top-24">
@@ -83,12 +119,35 @@ export function ProductInfoPanel({ product, formatPrice }: ProductInfoPanelProps
 
         {/* Actions */}
         <div className="space-y-2">
-          <Button className="w-full btn-press" size="lg" disabled={spotsLeft !== null && spotsLeft <= 0}>
+          <Button
+            className="w-full btn-press"
+            size="lg"
+            disabled={(spotsLeft !== null && spotsLeft <= 0) || adding}
+            onClick={handleBuyNow}
+          >
             Comprar ahora
           </Button>
-          <Button variant="outline" className="w-full btn-press" size="lg">
-            <ShoppingCart className="size-4 mr-2" />
-            Agregar al carrito
+          <Button
+            variant="outline"
+            className={cn(
+              "w-full btn-press",
+              added && "bg-green-50 border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400"
+            )}
+            size="lg"
+            onClick={handleAddToCart}
+            disabled={adding}
+          >
+            {added ? (
+              <>
+                <Check className="size-4 mr-2" />
+                Agregado
+              </>
+            ) : (
+              <>
+                <ShoppingCart className="size-4 mr-2" />
+                Agregar al carrito
+              </>
+            )}
           </Button>
         </div>
 
