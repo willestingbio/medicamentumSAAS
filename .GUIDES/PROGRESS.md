@@ -14,7 +14,7 @@ Actualizado: 2026-06-25 (Fase 4 — Carrito/Checkout completada; fixes de build/
 | Fase 3 — Marketplace | ✅ COMPLETA |
 | Fase 4 — Carrito + Checkout (Wompi) | ✅ COMPLETA |
 | Fase 5 — Dashboard del Estudiante | ✅ COMPLETA (dashboard, configuracion, cursos, reproductor leccion, VR keys, 2FA, tests, Google Calendar OAuth, Course Builder models, lesson player, mis-cursos, moodle-sync) |
-| Fase 6 — Integración Moodle (alcance reducido, ver `PLAN.md` Fase 6) | ⬜ No iniciada |
+| Fase 6 — Integración Moodle (alcance reducido, ver `PLAN.md` Fase 6) | ✅ COMPLETA |
 | Fase 6.5 — Course Builder & Marketplace Multi-Vendor (NUEVO) | ⬜ No iniciada |
 | Fase 7-13 | ⬜ No iniciadas |
 
@@ -187,6 +187,18 @@ Actualizado: 2026-06-25 (Fase 4 — Carrito/Checkout completada; fixes de build/
 
 ---
 
+## Fase 6 — Integración Moodle ✅ COMPLETA
+
+- [x] **Webhook de Wompi modificado** — se añade comprobación para que solo se inscriba a Moodle si `contentSource === 'moodle_legacy'`
+- [x] **SSO Route Handler (`/api/moodle/autologin`)** — gestiona el redireccionamiento seguro a Moodle usando el token de autologin o el fallback de login manual
+- [x] **Continuar Curso Button** — DashboardContent y MyCoursesContent ahora redirigen automáticamente a la sesión externa de Moodle para cursos legacy
+- [x] **Cron de sincronización de progreso (`/api/cron/moodle-sync`)** — endpoint seguro protegido por `CRON_SECRET` para sincronizar en masa el estado del estudiante
+- [x] **Moodle Course Catalog API (`/api/moodle/courses`)** — endpoint seguro para administradores para visualizar y enlazar cursos de Moodle
+- [x] **Pruebas de Integración** — `tests/phase6-moodle.test.ts` con 20/20 casos de prueba pasando (auth de cron, redireccionamiento, lógica de sincronización, etc.)
+- [x] **TypeScript & ESLint** — 100% libre de errores
+
+---
+
 ## Fase 6.5 — Course Builder & Marketplace Multi-Vendor — ⬜ No iniciada (NUEVO)
 **Bloqueante:** Fase 4 (checkout) y Fase 5 (dashboard del estudiante) completas. No depende de la Fase 6 (Moodle) — puede desarrollarse en paralelo.
 
@@ -197,12 +209,34 @@ Actualizado: 2026-06-25 (Fase 4 — Carrito/Checkout completada; fixes de build/
 - [ ] Course Builder: panel `/instructor`, editor de curso de 3 columnas, CRUD de módulos/lecciones con drag & drop accesible
 - [ ] Subida de video a Cloudflare Stream (Direct Upload) + webhook de confirmación
 - [ ] Editor de quiz (preguntas, opciones, configuración de intentos/tiempo)
-- [ ] Reproductor de lección del estudiante (HLS firmado) + marcado de progreso + certificación automática — **reproductor base ya creado en Fase 5** (HLS.js, outline, auto-mark 90%, progreso); pendiente: signed URLs de Cloudflare Stream, componente de Quiz para el estudiante, certificación automática
+- [ ] Reproductor de lección del estudiante (HLS firmado) + marcado de progreso + certificación automática
 - [ ] Onboarding de vendor (`/vender`): KYC, datos bancarios cifrados, aprobación por `super_admin`
 - [ ] Flujo de revisión editorial (`/admin/review-queue`) antes de publicar productos de vendor
 - [ ] Cálculo y aprobación manual de payouts (`/admin/payouts`) — sin disparo automático de transferencias reales en esta fase
 - [ ] Suite de tests específica de la fase (ownership, idempotencia de webhook, cifrado de datos bancarios, cálculo de comisión, E2E completo)
+---
 
+## Fase 7 — Panel de Organización (gestión real) — ⬜ No iniciada (alcance nuevo, auditoría 2026-06-26)
+
+> Ver `PLAN.md` Fase 7 para el detalle completo. Resumen:
+
+- [ ] `updateEmployeeRole` / `removeEmployeeFromOrganization` (Server Actions) con protección "nunca sin admin"
+- [ ] UI: dropdown de rol + remover empleado en `/org/employees`, con diálogo de confirmación explícito
+- [ ] Compra corporativa en lote: toggle en checkout, `createBulkOrderForOrganization`, `assignCourseToEmployee`
+- [ ] UI: banner de cupos sin asignar + asignación por empleado
+- [ ] `getOrganizationProgressReport` + pantalla `/org/reports` con exportación CSV
+- [ ] Decisión pendiente con negocio: estrategia de atribución de cupos a múltiples órdenes (FIFO sugerido)
+---
+
+## Fase 7.1 — Reembolsos y Soporte — ⬜ No iniciada (NUEVO, auditoría 2026-06-26)
+
+> Hueco crítico: la UI promete "política de reembolso" desde el día 1 sin que exista el flujo. Ver `PLAN.md` Fase 7.1.
+
+- [ ] Modelo Prisma `RefundRequest` + `SupportTicket` + policies RLS
+- [ ] `lib/refunds/policy.ts` — política de elegibilidad (7 días / 20% progreso, **a confirmar con negocio antes de fijar el valor final**)
+- [ ] `requestRefund`, `processRefund` + integración con reembolsos de Wompi (confirmar que el plan actual de Wompi los soporta)
+- [ ] UI: botón en `/orders`, bandeja `/admin/refunds`
+- [ ] `createSupportTicket` + pantalla `/soporte` + enlace en footer/menú de usuario
 ---
 
 ## Archivos eliminados en esta sesión (cleanup)
@@ -215,7 +249,7 @@ Actualizado: 2026-06-25 (Fase 4 — Carrito/Checkout completada; fixes de build/
 | `.vercel/` | Estado local Vercel |
 | `app/api/insforge-token/route.ts` | Bridge JWT obsoleto |
 | `app/api/debug/` | Directorio vacío |
-
+ 
 ---
 
 ## Desviaciones conocidas
@@ -229,3 +263,5 @@ Actualizado: 2026-06-25 (Fase 4 — Carrito/Checkout completada; fixes de build/
 7. **Moodle Web Service API no soporta crear secciones/recursos/quizzes por API** — verificado contra documentación oficial, junio 2026. Por eso el contenido de cursos nuevos vive en Postgres propio (Fase 6.5) y no en Moodle. Ver `TRD.md §19.1` para el detalle completo de esta decisión de arquitectura.
 8. Video de lecciones vía Cloudflare Stream, no R2 — R2 queda reservado a archivos estáticos (imágenes, PDFs, modelos 3D). Ver `TRD.md §19.4`.
 9. `vitest.config.ts` requiere `pool: 'threads'` explícito — el pool por defecto causaba timeout en entorno jsdom.
+10. **Auditoría 2026-06-26 — huecos de producto encontrados y resueltos en documentación** (no en código, que no estaba disponible para revisar en esta sesión): gestión de empleados sin revocación de acceso, `EmployeeAssignment` huérfano desde la Fase 4, ausencia de flujo de reembolso real pese a estar prometido en la UI desde el inicio, ausencia de canal de soporte. Ver `PLAN.md` Fase 7 y 7.1.
+11. **Dos contradicciones internas corregidas en `FLUJOS.md`:** el trigger de certificado (§9) asumía sync con Moodle incluso para cursos `native`, y la validación de `moodleCourseId` (§11) se aplicaba indistintamente sin distinguir `contentSource`. Ambas quedaron desalineadas tras introducir la Fase 6.5 (v4.0) y no se propagaron a todas las secciones afectadas en su momento — corregido ahora.
