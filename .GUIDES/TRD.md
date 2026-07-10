@@ -1,6 +1,6 @@
 # TRD — Medicamentum360
 **Technical Requirements Document**
-Versión: 3.0 · Fecha: 2026-06-24
+Versión: 3.1 · Fecha: 2026-06-26 · Añade modelo de compra corporativa (`EmployeeAssignment`), reembolsos y soporte (auditoría de huecos)
 Stack actualizado a despliegue VPS auto-alojado — reemplaza referencias a Vercel e InsForge. Añade Course Builder propio y marketplace multi-vendor.
 
 > **Cambio mayor v2.0:** la plataforma de hosting pasa de Vercel + InsForge a **VPS propio con Docker Compose**. La base de datos es ahora **Postgres gestionado en el mismo VPS** (o managed externo como Neon/Supabase si se prefiere). El storage de archivos es **Cloudflare R2 o MinIO**. Ver `DEPLOY.md` para la guía completa de infraestructura.
@@ -114,6 +114,49 @@ generator client {
 ```
 
 > El esquema completo de modelos (`User`, `Product`, `Order`, etc.) se mantiene igual que en TRD v1.0 §3. No se reproduce aquí para evitar divergencias — la fuente de verdad es `prisma/schema.prisma`.
+
+### 3.1 `EmployeeAssignment` y el modelo de compra corporativa (B2B) — documentado por primera vez
+
+> **Contexto de esta sección (auditoría 2026-06-26):** `EmployeeAssignment` ya existe como tabla en el schema Prisma real (creada en la Fase 4, ver `PROGRESS.md`), pero nunca tuvo una definición formal en este documento — TRD v1.0 nunca llegó a especificar el modelo de compra corporativa con el detalle suficiente. Esto generó un hueco real: no había ninguna Server Action, pantalla ni flujo que lo usara. Se documenta aquí el modelo conceptual correcto; **antes de migrar, compara esta definición contra el `EmployeeAssignment` real de `prisma/schema.prisma`** y señala cualquier diferencia — no asumas que coinciden campo a campo.
+
+**El problema que resuelve:** un hospital (`Organization`) compra cupos de un curso para sus empleados — no es lo mismo que cada empleado comprando individualmente con su propia tarjeta. La compra la paga la organización (`Order.organizationId`, no solo `Order.userId`), pero el *acceso* se asigna a personas concretas.
+
+```prisma
+enum AssignmentStatus {
+  active
+  revoked   // el empleado fue removido de la organización, o el hospital_admin le quitó la asignación puntual
+}
+
+model EmployeeAssignment {
+  id              String           @id @default(cuid())
+  organizationId  String
+  organization    Organization     @relation(fields: [organizationId], references: [id])
+  userId          String
+  user            User             @relation(fields: [userId], references: [id])
+  courseId        String           // o productId, según cómo se modele en el schema real — verificar
+  orderId         String           // la Order que pagó este cupo, para trazabilidad
+  status          AssignmentStatus @default(active)
+  assignedAt      DateTime         @default(now())
+  assignedBy      String           // userId del hospital_admin que hizo la asignación
+  revokedAt       DateTime?
+  revokedBy       String?
+
+  @@unique([organizationId, userId, courseId]) // un empleado no puede tener 2 asignaciones activas al mismo curso
+  @@index([organizationId, status])
+  @@index([userId])
+}
+```
+
+**Flujo de negocio que esto habilita (ver `FLUJOS.md` para el detalle paso a paso):**
+1. `hospital_admin` compra N cupos de un curso desde el marketplace — el checkout permite elegir cantidad y, en vez de `Order.userId` ser el único dueño del acceso, se crea una `Order` con `organizationId` y `quantity: N`.
+2. Tras el pago, **no se crea automáticamente un `Enrollment` para nadie** — los N cupos quedan "sin asignar" hasta que el `hospital_admin` los reparte.
+3. Desde `/org/employees`, el `hospital_admin` asigna cupos a empleados específicos → se crea un `EmployeeAssignment` + el `Enrollment` correspondiente para ese empleado.
+4. Si quedan cupos sin asignar, se muestran como "N cupos disponibles sin asignar" en el panel — visibilidad explícita para que el hospital no pague por cupos que nunca usa.
+5. Remover un empleado (`FLUJOS.md §10.1`) marca su `EmployeeAssignment` como `revoked`, liberando el cupo para reasignarlo a otra persona — **el cupo no se pierde**, solo cambia de dueño.
+
+**RLS para `EmployeeAssignment`:** lectura/escritura restringida a `organizationId = get_user_org_id()` para `hospital_admin`, y a `super_admin` sin restricción — mismo patrón que el resto de tablas con `organizationId` (`TRD.md §4`).
+
+> **Nota honesta:** este flujo de "comprar N cupos y asignarlos después" es el modelo correcto para B2B, pero **no estaba descrito así en ninguna versión anterior de `FLUJOS.md` §5 (compra) ni en el checkout actual** — el checkout documentado hoy asume una compra 1:1 (un usuario compra para sí mismo). Implementar la compra de cupos en lote para una organización es trabajo adicional real, no solo documentación — ver `PLAN.md` Fase 7 para dónde se prioriza este trabajo.
 
 ---
 
@@ -361,18 +404,25 @@ docker exec -i medicamentum_postgres psql -U medicamentum -d medicamentum360 < m
 
 ## 19. Course Builder propio — arquitectura
 
-### 19.1 Por qué el contenido del curso NO vive en Moodle
+### 19.1 Estrategia de integración con Moodle (revisada — julio 2026)
 
-**Hallazgo crítico de arquitectura (verificado contra la documentación oficial de Moodle, junio 2026):** la Web Service API de Moodle expone funciones core para crear y editar **cursos** (`core_course_create_courses`), **categorías** (`core_course_create_categories`), **usuarios** (`core_user_create_users`) e **inscripciones** (`enrol_manual_enrol_users`) — pero **no existe ninguna función core para crear secciones, recursos (`mod_resource`) o actividades de quiz (`mod_quiz`) dentro de un curso por API**. La única vía de subida de archivos (`core_files_upload`) deposita el archivo en el área "draft" del usuario, sin adjuntarlo automáticamente a una sección del curso — eso solo se puede hacer manualmente desde la interfaz de Moodle o escribiendo un plugin propio que extienda los web services (fuera de alcance de este proyecto).
+**Contexto:** el equipo de negocio quiere que Moodle sea el LMS central visible para los estudiantes, y que Medicamentum360 actúe como la capa de creación rápida encima. Es decir: los cursos deben existir en Moodle, pero se crean y gestionan desde Medicamentum360.
 
-**Decisión de arquitectura (vinculante, no la reabras sin razón de peso):** el contenido pedagógico de cada curso — módulos, lecciones, video, texto, recursos descargables, quizzes — vive **enteramente en Postgres propio**, construido y editado desde el Course Builder de Medicamentum360 (`/instructor`). Moodle deja de ser "donde vive el curso" y pasa a ser exclusivamente:
-1. El motor de **inscripción** (`Enrollment` espejo + `enrol_manual_enrol_users`).
-2. El **SSO/autologin** para quien todavía quiera ver el curso embebido en la interfaz nativa de Moodle (opcional, solo para cursos legacy ya vinculados antes de la v3.0).
-3. El **registro espejo de progreso/calificaciones** vía cron de sincronización, para los cursos que sí tengan actividades reales dentro de Moodle (casos legacy).
+**Hallazgo técnico (verificado, junio 2026):** la Web Service API de Moodle expone:
+- ✅ `core_course_create_courses` — crear/editar/eliminar el **shell del curso** (nombre, categoría, visibilidad)
+- ✅ `core_course_get_categories` — listar categorías
+- ✅ `core_user_create_users`, `enrol_manual_enrol_users` — usuarios e inscripciones
+- ❌ **NO existe** función core para crear secciones, recursos (`mod_resource`), quizzes (`mod_quiz`) ni actividades dentro de un curso
 
-Para todo curso creado *desde* el Course Builder nuevo, el progreso, las calificaciones y los certificados se calculan **directamente en Postgres** a partir de las lecciones completadas y los resultados de quiz — sin necesidad de ida y vuelta con Moodle. Esto es estrictamente mejor: más rápido, sin dependencia de la disponibilidad de Moodle, y permite features (drip content, quizzes con banco de preguntas, certificación automática) que la interfaz nativa de Moodle no ofrece de forma flexible.
+**Estrategia en 3 fases (documentada para roadmap, no todo se implementa ya):**
 
-`Product.moodleCourseId` se vuelve **opcional y heredado**: solo se rellena si el `super_admin` decide igualmente reflejar el curso en Moodle (por ejemplo, para hospitales que ya tienen flujos de reporting corporativo apuntando a Moodle). El campo nuevo `Product.contentSource` (`enum: 'native' | 'moodle_legacy'`) determina cuál motor de progreso manda.
+| Fase | Qué | Estado |
+|---|---|---|
+| **1. Bridge Shell** | Al crear un curso en el Course Builder, también se crea el shell en Moodle (`createMoodleCourse`) y se vincula vía `Product.moodleCourseId`. El contenido rico (lecciones, quizzes) vive en Postgres. El estudiante consume desde Medicamentum360. | ✅ Implementado (julio 2026) |
+| **2. Sync de estructura** | Sincronizar módulos como topics/sections en Moodle usando el course format nativo. El contenido se embebe vía iframe/LTI desde Medicamentum360. Así el estudiante puede navegar el curso desde Moodle también. | 📋 Pendiente |
+| **3. Plugin Moodle** | Escribir un plugin local de Moodle que exponga `create_section`, `add_resource`, `add_quiz` como web services. Esto haría que el Course Builder pueda crear TODO el contenido directamente en Moodle, eliminando la necesidad de Postgres como fuente de verdad del contenido. | 📋 Pendiente |
+
+**Decisión para hoy:** el contenido pedagógico (módulos, lecciones, video, quizzes) sigue viviendo en Postgres y sirviéndose desde el reproductor de Medicamentum360. El shell del curso **sí se crea en Moodle** automáticamente para que exista en ambos lados. El progreso y certificados se calculan en Postgres para `contentSource: native`.
 
 ### 19.2 Modelo de datos — Course Builder
 
@@ -652,7 +702,78 @@ Ningún producto de un `vendorId` no nulo llega a `published: true` sin pasar po
 
 ---
 
-## 21. Roadmap de mejoras identificadas (no bloqueantes, para evaluar por fase)
+## 21. Reembolsos y soporte — modelo de datos (NUEVO)
+
+> Documentado por primera vez tras auditoría de 2026-06-26 — ver `FLUJOS.md §19-20` para el flujo completo paso a paso. Hasta ahora la UI prometía "política de reembolso" sin que existiera ningún modelo ni lógica detrás.
+
+```prisma
+enum RefundStatus {
+  pending
+  approved
+  rejected
+  processed   // dinero efectivamente devuelto vía Wompi
+}
+
+model RefundRequest {
+  id          String       @id @default(cuid())
+  orderId     String
+  order       Order        @relation(fields: [orderId], references: [id])
+  requestedBy String        // userId — para Order.organizationId, debe ser el hospital_admin, no un empleado
+  reason      String        // categoría: "not_as_expected" | "technical_issue" | "duplicate_purchase" | "other"
+  details     String?       @db.Text
+  status      RefundStatus  @default(pending)
+  reviewedBy  String?       // userId del super_admin que aprobó/rechazó
+  rejectionReason String?   @db.Text
+  wompiRefundRef  String?
+  createdAt   DateTime      @default(now())
+  resolvedAt  DateTime?
+
+  @@index([orderId])
+  @@index([status])
+}
+
+enum SupportTicketCategory {
+  payment_issue
+  technical_issue
+  certificate_question
+  other
+}
+
+model SupportTicket {
+  id          String                 @id @default(cuid())
+  userId      String?                // null si el usuario no estaba autenticado al crear el ticket
+  email       String                 // siempre presente, autenticado o no
+  category    SupportTicketCategory
+  subject     String
+  description String                 @db.Text
+  relatedOrderId   String?
+  relatedCourseId  String?
+  status      String                 @default("open") // "open" | "closed" — gestión simple, sin estados intermedios en esta fase
+  createdAt   DateTime               @default(now())
+
+  @@index([status])
+  @@index([userId])
+}
+```
+
+**Política de elegibilidad de reembolso (constante de aplicación, no hardcodeada en el componente de UI):**
+```ts
+// lib/refunds/policy.ts
+export const REFUND_WINDOW_DAYS = 7;
+export const REFUND_MAX_PROGRESS_PCT = 20; // por encima de esto, requiere revisión manual obligatoria, no autoaprobable
+
+export function isRefundEligible(order: { createdAt: Date }, progressPct: number): boolean {
+  const daysSincePurchase = (Date.now() - order.createdAt.getTime()) / (1000 * 60 * 60 * 24);
+  return daysSincePurchase <= REFUND_WINDOW_DAYS && progressPct <= REFUND_MAX_PROGRESS_PCT;
+}
+```
+Centralizar la política en una sola función evita el riesgo de que la validación del botón (cliente) y la validación de la Server Action (servidor) diverjan con el tiempo — ambas importan la misma constante y función.
+
+**RLS:** `RefundRequest` — lectura/escritura para `requestedBy` (su propio request) y `super_admin`; nunca visible para otros estudiantes. `SupportTicket` — mismo patrón.
+
+---
+
+## 22. Roadmap de mejoras identificadas (no bloqueantes, para evaluar por fase)
 
 Estas son mejoras que la investigación de mercado (Kajabi, Teachable, Podia, LearnDash, Moodle — junio 2026) sugiere como expectativa estándar de la industria de e-learning, que **no están en el alcance mínimo de la Fase 6.5** pero vale la pena dejar registradas para no perderlas de vista en fases posteriores:
 
@@ -662,3 +783,6 @@ Estas son mejoras que la investigación de mercado (Kajabi, Teachable, Podia, Le
 - **Vista previa gratuita del curso (`Lesson.isPreview`):** ya está en el modelo de datos de §19.2 porque es trivial de incluir desde el inicio, pero la UI de marketplace (mostrar 1-2 lecciones gratis antes de comprar) es trabajo de UX pendiente — ver `UX_UI.md §3.4`.
 - **Afiliados/referidos para instructores:** Teachable y Kajabi incluyen programas de afiliados nativos. Quedaría como extensión natural del modelo `Vendor` si se decide impulsar el crecimiento por recomendación.
 - **App móvil dedicada / PWA reforzada:** ya está contemplado parcialmente en `PLAN.md` Fase 13 (PWA offline para hospitales con baja conectividad) — el roadmap de mercado confirma que es una expectativa creciente, no un nice-to-have marginal.
+- **Reembolsos parciales por cupo en compras en lote** (ver `§3.1` y `FLUJOS.md §19`): hoy el reembolso es de la orden completa o nada. Si el negocio reporta que los hospitales piden reembolsos parciales de cupos sin asignar, esto se vuelve prioritario.
+- **Expiración de cupos sin asignar** (ver `§3.1`): hoy un cupo comprado por una organización y nunca asignado no caduca. Si se vuelve un problema de "cupos zombie" acumulados, conviene una política de expiración (ej. 1 año) con aviso previo al hospital.
+- **Sistema de tickets de soporte más robusto** (ver `§21`): el modelo actual es deliberadamente simple (sin estados intermedios, sin bandeja in-app de respuestas). Si el volumen de soporte crece, esto merece su propia fase con un sistema más completo (Zendesk, Intercom, o un panel propio con conversación in-app).
