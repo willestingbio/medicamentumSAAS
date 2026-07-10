@@ -95,6 +95,25 @@ export async function createVendorProduct(data: CreateVendorProductInput) {
         contentSource: 'native',
       },
     });
+
+    // Crear también el curso en Moodle (shell vacío) para integración completa.
+    // No bloquea si Moodle no está configurado (dev) o falla.
+    try {
+      const { createMoodleCourse } = await import('@/lib/moodle/client');
+      const shortname = slug.substring(0, 32).replace(/-/g, '_');
+      const moodleCourseId = await createMoodleCourse({
+        fullname: trimmedTitle,
+        shortname,
+        summary: data.description.trim().substring(0, 500),
+      });
+      await prisma.product.update({
+        where: { id: product.id },
+        data: { moodleCourseId },
+      });
+      console.log(`[Vendor] Curso vinculado a Moodle: ${moodleCourseId}`);
+    } catch (e) {
+      console.warn('[Vendor] Moodle no disponible, curso creado solo en Postgres:', e instanceof Error ? e.message : e);
+    }
   }
 
   return {

@@ -8,8 +8,11 @@
  * - core_user_create_users
  * - core_user_get_users
  * - core_user_get_users_by_field
+ * - core_course_create_courses       ← Crear curso en Moodle desde Course Builder
  * - core_course_get_courses
  * - core_course_get_courses_by_field
+ * - core_course_get_categories       ← Obtener categorías de Moodle
+ * - core_course_delete_courses       ← Eliminar curso en Moodle
  * - enrol_manual_enrol_users
  * - core_enrol_get_enrolled_users
  * - core_completion_get_activities_completion_status
@@ -210,6 +213,71 @@ export async function getCourses(): Promise<any> {
     return result;
   } catch (error) {
     console.error('[Moodle] Error getting courses:', error instanceof Error ? error.message : 'unknown');
+    throw error;
+  }
+}
+
+export async function getMoodleCategories(): Promise<any> {
+  try {
+    return await callMoodleAPI('core_course_get_categories');
+  } catch (error) {
+    console.error('[Moodle] Error getting categories:', error instanceof Error ? error.message : 'unknown');
+    throw error;
+  }
+}
+
+/**
+ * Crear un curso vacío en Moodle.
+ * Se llama desde el Course Builder para sincronizar el curso con Moodle.
+ *
+ * @param data - Datos del curso
+ * @returns ID del curso creado en Moodle
+ */
+export async function createMoodleCourse(data: {
+  fullname: string;
+  shortname: string;
+  categoryid?: number;
+  summary?: string;
+}): Promise<number> {
+  try {
+    const result = await callMoodleAPI('core_course_create_courses', {
+      courses: {
+        fullname: data.fullname,
+        shortname: data.shortname,
+        categoryid: data.categoryid ?? 1,
+        ...(data.summary && { summary: data.summary }),
+        visible: 1,
+      },
+    });
+
+    if (!result || !result[0]) {
+      throw new Error('Failed to create Moodle course');
+    }
+
+    const moodleCourseId = result[0].id;
+    console.log(`[Moodle] Course created in Moodle: ID ${moodleCourseId} — "${data.fullname}"`);
+
+    return moodleCourseId;
+  } catch (error) {
+    console.error('[Moodle] Error creating course:', error instanceof Error ? error.message : 'unknown');
+    throw error;
+  }
+}
+
+/**
+ * Eliminar un curso de Moodle.
+ * Se llama cuando se elimina un producto vinculado.
+ *
+ * @param moodleCourseId - ID del curso en Moodle
+ */
+export async function deleteMoodleCourse(moodleCourseId: number): Promise<void> {
+  try {
+    await callMoodleAPI('core_course_delete_courses', {
+      courseids: moodleCourseId,
+    });
+    console.log(`[Moodle] Course ${moodleCourseId} deleted from Moodle`);
+  } catch (error) {
+    console.error('[Moodle] Error deleting course:', error instanceof Error ? error.message : 'unknown');
     throw error;
   }
 }
