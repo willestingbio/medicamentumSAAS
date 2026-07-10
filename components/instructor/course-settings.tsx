@@ -1,12 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { Settings, Eye, Send, CheckCircle, Loader2 } from 'lucide-react';
+import { ArrowLeft, Settings, Eye, Send, CheckCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import {
   updateCourseSettings,
@@ -103,6 +104,14 @@ export function CourseSettings({ course, isAdmin }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        <Link
+          href="/instructor"
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground pb-2 transition-colors"
+        >
+          <ArrowLeft className="size-3.5" />
+          Volver a Mis Cursos
+        </Link>
+
         <div>
           <h3 className="text-sm font-medium text-foreground">{course.product.title}</h3>
           <div className="flex items-center gap-2 mt-1">
@@ -140,25 +149,30 @@ export function CourseSettings({ course, isAdmin }: Props) {
           />
         </div>
 
-        <div className="flex items-center justify-between">
-          <Label htmlFor="certificateEnabled" className="cursor-pointer">
-            Certificado al completar
-          </Label>
-          <button
-            id="certificateEnabled"
-            role="switch"
-            aria-checked={certificateEnabled}
-            onClick={() => setCertificateEnabled(!certificateEnabled)}
-            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors ${
-              certificateEnabled ? 'bg-primary' : 'bg-muted'
-            }`}
-          >
-            <span
-              className={`pointer-events-none block size-4 rounded-full bg-background shadow-sm transition-transform ${
-                certificateEnabled ? 'translate-x-4' : 'translate-x-0.5'
+        <div className="space-y-2 rounded-lg border border-border p-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label htmlFor="certificateEnabled" className="text-sm font-medium cursor-pointer">
+                Certificado al completar
+              </Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Los estudiantes recibirán un certificado PDF al terminar el curso
+              </p>
+            </div>
+            <button
+              id="certificateEnabled"
+              role="switch"
+              aria-checked={certificateEnabled}
+              onClick={() => setCertificateEnabled(!certificateEnabled)}
+              className={`relative inline-flex h-6 w-10 shrink-0 cursor-pointer items-center rounded-full transition-all duration-200 ${
+                certificateEnabled ? 'bg-primary' : 'bg-muted hover:bg-muted/80'
               }`}
-            />
-          </button>
+            >
+              <span className={`pointer-events-none block size-4 rounded-full bg-background shadow-sm ring-0 transition-transform duration-200 ${
+                certificateEnabled ? 'translate-x-5' : 'translate-x-1'
+              }`} />
+            </button>
+          </div>
         </div>
 
         <Button onClick={handleSaveSettings} disabled={saving} size="sm" className="w-full">

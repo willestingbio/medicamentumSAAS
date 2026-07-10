@@ -160,21 +160,34 @@ export default function OrdersPage() {
                 )}
 
                 {order.status === 'pending' && (
-                  <div className="mt-4 pt-4 border-t">
-                    <p className="text-sm text-muted-foreground">
+                  <div className="mt-4 pt-4 border-t flex items-center gap-3">
+                    <p className="text-sm text-muted-foreground flex-1">
                       Tu pago está siendo procesado. Te notificaremos cuando se confirme.
                     </p>
+                    <Link
+                      href={`/checkout?orderId=${order.id}`}
+                      className="inline-flex items-center text-sm font-medium text-primary hover:underline"
+                    >
+                      Continuar compra
+                      <ExternalLink className="size-3 ml-1" />
+                    </Link>
                   </div>
                 )}
 
                 {(order.status === 'failed' || order.status === 'cancelled') && (
-                  <div className="mt-4 pt-4 border-t">
+                  <div className="mt-4 pt-4 border-t flex items-center gap-3">
+                    <Link
+                      href={`/checkout?orderId=${order.id}`}
+                      className="inline-flex items-center text-sm font-medium text-primary hover:underline"
+                    >
+                      Reintentar pago
+                      <ExternalLink className="size-3 ml-1" />
+                    </Link>
                     <Link
                       href="/productos"
-                      className="inline-flex items-center text-sm text-primary hover:underline"
+                      className="inline-flex items-center text-sm text-muted-foreground hover:underline"
                     >
-                      Intentar de nuevo
-                      <ExternalLink className="size-3 ml-1" />
+                      Explorar catálogo
                     </Link>
                   </div>
                 )}

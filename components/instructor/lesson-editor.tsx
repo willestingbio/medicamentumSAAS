@@ -228,20 +228,80 @@ export function LessonEditor({ lessonId, lessonType, lessonTitle }: Props) {
         )}
 
         {lessonType === 'quiz' && (
-          <div className="space-y-4">
-            <div className="rounded-lg border border-border bg-muted/30 p-4">
-              <h3 className="text-sm font-semibold text-foreground mb-2">Editor de Quiz</h3>
-              <p className="text-sm text-muted-foreground">
-                El editor de quiz estará disponible próximamente. Por ahora puedes gestionar
-                las preguntas desde la consola de administración.
-              </p>
-              {lesson?.quiz && (
-                <div className="mt-3 space-y-1 text-sm text-muted-foreground">
-                  <p>Preguntas: {lesson.quiz.questions.length}</p>
-                  <p>Intentos: {lesson.quiz._count.attempts}</p>
-                </div>
-              )}
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-foreground">Editor de Quiz</h3>
+              <Badge variant="secondary" className="text-xs">
+                {lesson?.quiz?.questions?.length ?? 0} preguntas
+              </Badge>
             </div>
+
+            {lesson?.quiz && lesson.quiz.questions.length > 0 ? (
+              <div className="space-y-4">
+                {/* Quiz Settings */}
+                <div className="rounded-lg border border-border p-3 space-y-3">
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Configuración</h4>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Mezclar preguntas:</span>
+                      <Badge variant={lesson.quiz.shuffleQuestions ? 'default' : 'outline'} className="ml-1 text-xs">
+                        {lesson.quiz.shuffleQuestions ? 'Sí' : 'No'}
+                      </Badge>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Intentos:</span>
+                      <span className="ml-1 font-medium">{lesson.quiz.maxAttempts ?? 'Ilimitado'}</span>
+                    </div>
+                    {lesson.quiz.timeLimitSec && (
+                      <div>
+                        <span className="text-muted-foreground">Tiempo límite:</span>
+                        <span className="ml-1 font-medium">{Math.floor(lesson.quiz.timeLimitSec / 60)} min</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Questions */}
+                {lesson.quiz.questions.map((q: any, qi: number) => (
+                  <div key={q.id} className="rounded-lg border border-border p-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <Badge variant="outline" className="text-[10px] mb-1">
+                          {q.type === 'single_choice' ? 'Opción única' : q.type === 'multiple_choice' ? 'Múltiple' : 'V/F'}
+                        </Badge>
+                        <p className="text-sm font-medium text-foreground">
+                          {qi + 1}. {q.prompt}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-1 pl-2">
+                      {q.options?.map((opt: any) => (
+                        <div key={opt.id} className={`flex items-center gap-2 text-sm px-2 py-1 rounded ${
+                          opt.isCorrect ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground'
+                        }`}>
+                          <span className="text-xs">{opt.isCorrect ? '✓' : '○'}</span>
+                          <span>{opt.label}</span>
+                          {opt.isCorrect && <Badge className="text-[10px] ml-auto bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">Correcta</Badge>}
+                        </div>
+                      ))}
+                    </div>
+                    {q.explanation && (
+                      <p className="text-xs text-muted-foreground italic border-t pt-2 mt-2">
+                        💡 {q.explanation}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-border p-8 text-center">
+                <HelpCircle className="size-8 text-muted-foreground mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">Este quiz no tiene preguntas todavía.</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Las preguntas pueden gestionarse desde la API de administración.
+                </p>
+              </div>
+            )}
           </div>
         )}
 

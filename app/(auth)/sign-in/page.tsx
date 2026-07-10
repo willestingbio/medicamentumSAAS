@@ -64,7 +64,7 @@ export default function SignInPage() {
       } catch {
         // Best-effort — don't block login if merge fails
       }
-      const redirectTo = new URLSearchParams(window.location.search).get('redirect_to') || '/';
+      const redirectTo = new URLSearchParams(window.location.search).get('redirect_to') || '/dashboard';
       window.location.href = redirectTo;
     } catch {
       setError('Error de conexión. Intenta de nuevo.');
@@ -74,7 +74,11 @@ export default function SignInPage() {
   };
 
   const handleGoogleSignIn = async () => {
-    await authClient.signIn.social({ provider: 'google' });
+    const redirectTo = new URLSearchParams(window.location.search).get('redirect_to');
+    await authClient.signIn.social({ 
+      provider: 'google',
+      callbackURL: redirectTo || '/dashboard',
+    });
   };
 
   return (

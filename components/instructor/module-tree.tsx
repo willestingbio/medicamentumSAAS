@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import {
+  ArrowLeft,
   Play,
   FileText,
   HelpCircle,
@@ -12,6 +13,7 @@ import {
   ChevronRight,
   Clock,
 } from 'lucide-react';
+import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -178,6 +180,10 @@ export function ModuleTree({
 
   return (
     <div className="w-64 xl:w-72 flex-shrink-0 border-r border-border bg-muted/30 flex flex-col">
+      <Link href="/instructor" className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground p-2 border-b border-border transition-colors">
+        <ArrowLeft className="size-3.5" />
+        Volver a Mis Cursos
+      </Link>
       <div className="p-3 border-b border-border">
         <h2 className="text-sm font-semibold text-foreground">Contenido del curso</h2>
       </div>
@@ -195,6 +201,7 @@ export function ModuleTree({
                   onClick={() => toggleModule(mod.id)}
                   className="p-0.5 text-muted-foreground hover:text-foreground"
                   aria-label={isExpanded ? 'Colapsar módulo' : 'Expandir módulo'}
+                  title={isExpanded ? 'Colapsar módulo' : 'Expandir módulo'}
                 >
                   {isExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                 </button>
@@ -208,6 +215,7 @@ export function ModuleTree({
                   onClick={() => handleDeleteModule(mod.id)}
                   className="p-0.5 text-muted-foreground hover:text-destructive opacity-0 group-hover/module:opacity-100 transition-opacity"
                   aria-label="Eliminar módulo"
+                  title="Eliminar módulo"
                 >
                   <Trash2 className="size-3.5" />
                 </button>
@@ -247,6 +255,7 @@ export function ModuleTree({
                           onClick={() => handleDeleteLesson(lesson.id)}
                           className="p-0.5 text-muted-foreground hover:text-destructive opacity-0 group-hover/lesson:opacity-100 transition-opacity shrink-0"
                           aria-label="Eliminar lección"
+                          title="Eliminar lección"
                         >
                           <Trash2 className="size-3" />
                         </button>
@@ -317,6 +326,7 @@ export function ModuleTree({
                     <button
                       onClick={() => handleAddLesson(mod.id)}
                       className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground pl-6 py-1 w-full"
+                      title="Agregar lección"
                     >
                       <Plus className="size-3" />
                       Agregar lección
@@ -365,6 +375,7 @@ export function ModuleTree({
           <button
             onClick={() => setAddingModule(true)}
             className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground p-2 w-full mt-1"
+            title="Agregar módulo"
           >
             <Plus className="size-3.5" />
             Agregar módulo

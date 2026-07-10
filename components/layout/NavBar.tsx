@@ -49,9 +49,10 @@ interface NavBarProps {
       organizationId?: string | null;
     };
   } | null;
+  vendorStatus?: string | null;
 }
 
-export const NavBar = memo(function NavBar({ navigationItems, initialSession }: NavBarProps) {
+export const NavBar = memo(function NavBar({ navigationItems, initialSession, vendorStatus }: NavBarProps) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isHidden, setIsHidden] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -72,6 +73,8 @@ export const NavBar = memo(function NavBar({ navigationItems, initialSession }: 
   const userRole = (session?.user as any)?.role;
   const isHospitalAdmin = userRole === 'hospital_admin' || userRole === 'super_admin';
   const isSuperAdmin = userRole === 'super_admin';
+  const isVendor = vendorStatus === 'active';
+  const isVendorPending = vendorStatus === 'pending_kyc' || vendorStatus === 'pending_review';
   const [guestToken, setGuestToken] = useState('');
 
   useEffect(() => {
@@ -206,6 +209,15 @@ export const NavBar = memo(function NavBar({ navigationItems, initialSession }: 
           {/* Desktop Nav Links — left aligned */}
           <ul className="hidden lg:flex items-center gap-1">
             {visibleItems.map(renderNavLink)}
+            {isVendor && (
+              <li><Link href="/instructor" className="text-sm font-normal transition-all duration-300 ease-out hover:text-primary px-3 py-1.5 rounded-md hover:bg-accent/50">Mi Panel</Link></li>
+            )}
+            {isHospitalAdmin && (
+              <li><Link href="/org/employees" className="text-sm font-normal transition-all duration-300 ease-out hover:text-primary px-3 py-1.5 rounded-md hover:bg-accent/50">Empleados</Link></li>
+            )}
+            {isSuperAdmin && (
+              <li><Link href="/admin/review-queue" className="text-sm font-normal transition-all duration-300 ease-out hover:text-primary px-3 py-1.5 rounded-md hover:bg-accent/50">Admin</Link></li>
+            )}
           </ul>
 
           {/* Search bar — only on marketplace, expands on hover */}
@@ -291,6 +303,30 @@ export const NavBar = memo(function NavBar({ navigationItems, initialSession }: 
                           Administración
                         </Link>
                       )}
+                      {isSuperAdmin && (
+                        <>
+                          <Link href="/admin/review-queue" onClick={() => setDropdownOpen(false)}
+                            className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent pl-8 transition-colors duration-150 ease-out">
+                            Cola de revisión
+                          </Link>
+                          <Link href="/admin/payouts" onClick={() => setDropdownOpen(false)}
+                            className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent pl-8 transition-colors duration-150 ease-out">
+                            Pagos a creadores
+                          </Link>
+                        </>
+                      )}
+                      {isVendor && (
+                        <Link href="/instructor" onClick={() => setDropdownOpen(false)}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors duration-150 ease-out">
+                          📚 Mi Panel de Creador
+                        </Link>
+                      )}
+                      {isVendorPending && (
+                        <Link href="/vender" onClick={() => setDropdownOpen(false)}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors duration-150 ease-out">
+                          Completar perfil de creador
+                        </Link>
+                      )}
                       <Link
                         href="/configuracion"
                         onClick={() => setDropdownOpen(false)}
@@ -299,7 +335,11 @@ export const NavBar = memo(function NavBar({ navigationItems, initialSession }: 
                         Configuración
                       </Link>
                       <button
-                        onClick={() => { signOut(); setDropdownOpen(false); }}
+                        onClick={async () => { 
+                          setDropdownOpen(false); 
+                          await signOut(); 
+                          window.location.href = '/';
+                        }}
                         className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-accent transition-colors duration-150 ease-out"
                       >
                         Cerrar sesión
@@ -391,8 +431,36 @@ export const NavBar = memo(function NavBar({ navigationItems, initialSession }: 
                             Administración
                           </Link>
                         )}
+                        {isSuperAdmin && (
+                          <>
+                            <Link href="/admin/review-queue" onClick={() => setMobileOpen(false)}
+                              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent pl-8 transition-colors duration-150 ease-out">
+                              Cola de revisión
+                            </Link>
+                            <Link href="/admin/payouts" onClick={() => setMobileOpen(false)}
+                              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent pl-8 transition-colors duration-150 ease-out">
+                              Pagos a creadores
+                            </Link>
+                          </>
+                        )}
+                        {isVendor && (
+                          <Link href="/instructor" onClick={() => setMobileOpen(false)}
+                            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent transition-colors duration-150 ease-out">
+                            📚 Mi Panel de Creador
+                          </Link>
+                        )}
+                        {isVendorPending && (
+                          <Link href="/vender" onClick={() => setMobileOpen(false)}
+                            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-accent transition-colors duration-150 ease-out">
+                            Completar perfil de creador
+                          </Link>
+                        )}
                         <button
-                          onClick={() => { signOut(); setMobileOpen(false); }}
+                          onClick={async () => { 
+                            setMobileOpen(false); 
+                            await signOut(); 
+                            window.location.href = '/';
+                          }}
                           className="w-full text-left rounded-lg px-3 py-2 text-sm text-destructive hover:bg-accent transition-colors duration-150 ease-out"
                         >
                           Cerrar sesión

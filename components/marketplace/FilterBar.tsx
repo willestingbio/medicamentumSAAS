@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { ArrowUpDown } from 'lucide-react';
+import { ArrowUpDown, X } from 'lucide-react';
 
 const categories = [
   { id: 'all', label: 'Todos' },
@@ -37,11 +37,18 @@ export function FilterBar() {
   const activeCategory = searchParams.get('type') || 'all';
   const activeSort = searchParams.get('sort') || 'popular';
   const activeSortLabel = sortOptions.find((o) => o.id === activeSort)?.label || 'Más populares';
+  const activeSearch = searchParams.get('search') || '';
+
+  function clearSearch() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('search');
+    router.push(`/productos?${params.toString()}`);
+  }
 
   return (
     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-      {/* Category Tabs */}
-      <div className="flex gap-2 flex-wrap">
+      {/* Category Tabs + Search Pill */}
+      <div className="flex items-center gap-2 flex-wrap">
         {categories.map((cat) => (
           <button
             key={cat.id}
@@ -56,6 +63,15 @@ export function FilterBar() {
             {cat.label}
           </button>
         ))}
+
+        {activeSearch && (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-primary/10 text-primary border border-primary/20">
+            &#x1F50D; {activeSearch}
+            <button onClick={clearSearch} className="ml-0.5 hover:bg-primary/20 rounded-full p-0.5">
+              <X className="size-3" />
+            </button>
+          </span>
+        )}
       </div>
 
       {/* Sort Dropdown */}

@@ -67,6 +67,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     },
   } : null;
 
+  let vendorStatus: string | null = null;
+  if (session?.user) {
+    const { prisma } = await import('@/lib/prisma');
+    const vendor = await prisma.vendor.findUnique({
+      where: { userId: session.user.id },
+      select: { status: true },
+    });
+    vendorStatus = vendor?.status ?? null;
+  }
+
   return (
     <html lang="es" suppressHydrationWarning>
       <head>
@@ -83,7 +93,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         `}} />
       </head>
       <body className="min-h-screen bg-background flex flex-col">
-        <NavBar navigationItems={navigationItems} initialSession={serializableSession} />
+        <NavBar navigationItems={navigationItems} initialSession={serializableSession} vendorStatus={vendorStatus} />
         <main className="flex-1">
           <PageTransition>{children}</PageTransition>
         </main>
