@@ -10,8 +10,8 @@ function wrap(fn: (req: Request) => Promise<Response>): (req: Request) => Promis
       const session = await auth.api.getSession({ headers: Object.fromEntries(req.headers.entries()) }).catch(() => null);
       const claims = session ? {
         sub: session.user.id,
-        user_role: (session.user as any)?.role || 'student',
-        organization_id: (session.user as any)?.organizationId || '',
+        user_role: session.user?.role || 'student',
+        organization_id: session.user?.organizationId || '',
       } : null;
       return rlsClaimsStore.run(claims, () => fn(req));
     } catch (e: any) {

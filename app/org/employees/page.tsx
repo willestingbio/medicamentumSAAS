@@ -105,13 +105,13 @@ export default function OrgEmployeesPage() {
   const [copySuccess, setCopySuccess] = useState(false);
 
   useEffect(() => {
-    authClient.getSession().then((s) => {
-      const sessionData = s as any;
-      if (!sessionData?.user) {
+    authClient.getSession().then((result) => {
+      const s = (result as any)?.data ?? result;
+      if (!s?.user) {
         router.push('/sign-in?redirect_to=/org/employees');
         return;
       }
-      const role = sessionData.user.role;
+      const role = (s as any).user.role;
       if (role !== 'hospital_admin' && role !== 'super_admin') {
         router.push('/dashboard');
         return;

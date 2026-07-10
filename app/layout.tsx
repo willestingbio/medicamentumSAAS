@@ -48,6 +48,10 @@ const jsonLd = {
   address: { '@type': 'PostalAddress', addressCountry: 'CO' },
 };
 
+import type { AppUser } from '@/lib/auth-types';
+
+// ... (keep imports as before)
+
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   let session = null;
   try {
@@ -56,26 +60,19 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     // No session cookie — normal for guests
   }
 
-  const serializableSession = session ? {
+  const user = (session?.user ?? null) as AppUser | null;
+
+  const serializableSession = user ? {
     user: {
-      id: session.user.id,
-      name: session.user.name,
-      email: session.user.email,
-      image: (session.user as any).image ?? null,
-      role: (session.user as any).role ?? 'student',
-      organizationId: (session.user as any).organizationId ?? null,
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      image: user.image ?? null,
+      role: user.role,
+      organizationId: user.organizationId,
+      vendorStatus: user.vendorStatus ?? null,
     },
   } : null;
-
-  let vendorStatus: string | null = null;
-  if (session?.user) {
-    const { prisma } = await import('@/lib/prisma');
-    const vendor = await prisma.vendor.findUnique({
-      where: { userId: session.user.id },
-      select: { status: true },
-    });
-    vendorStatus = vendor?.status ?? null;
-  }
 
   return (
     <html lang="es" suppressHydrationWarning>
@@ -93,7 +90,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         `}} />
       </head>
       <body className="min-h-screen bg-background flex flex-col">
-        <NavBar navigationItems={navigationItems} initialSession={serializableSession} vendorStatus={vendorStatus} />
+        <NavBar navigationItems={navigationItems} initialSession={serializableSession} vendorStatus={user?.vendorStatus ?? null} />
         <main className="flex-1">
           <PageTransition>{children}</PageTransition>
         </main>

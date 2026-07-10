@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Solo admins pueden ver el catálogo de Moodle
-    const userRole = (session.user as any).role;
+    const userRole = session.user.role;
     if (userRole !== 'super_admin' && userRole !== 'hospital_admin') {
       return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
     }

@@ -28,8 +28,8 @@ export async function createInvitation(email: string) {
     throw new Error('No autenticado');
   }
 
-  const userRole = (session.user as any).role;
-  const userOrgId = (session.user as any).organizationId;
+  const userRole = session.user.role;
+  const userOrgId = session.user.organizationId;
 
   if (userRole !== 'hospital_admin' && userRole !== 'super_admin') {
     throw new Error('No autorizado para invitar usuarios');
@@ -81,8 +81,8 @@ export async function listOrgInvitations() {
     throw new Error('No autenticado');
   }
 
-  const userRole = (session.user as any).role;
-  const userOrgId = (session.user as any).organizationId;
+  const userRole = session.user.role;
+  const userOrgId = session.user.organizationId;
 
   if (userRole !== 'hospital_admin' && userRole !== 'super_admin') {
     throw new Error('No autorizado');
@@ -115,8 +115,8 @@ export async function deleteInvitation(invitationId: string) {
     throw new Error('No autenticado');
   }
 
-  const userRole = (session.user as any).role;
-  const userOrgId = (session.user as any).organizationId;
+  const userRole = session.user.role;
+  const userOrgId = session.user.organizationId;
 
   if (userRole !== 'hospital_admin' && userRole !== 'super_admin') {
     throw new Error('No autorizado para eliminar invitaciones');
@@ -142,7 +142,7 @@ export async function getOrgInfo() {
     throw new Error('No autenticado');
   }
 
-  const userOrgId = (session.user as any).organizationId;
+  const userOrgId = session.user.organizationId;
   if (!userOrgId) {
     return null;
   }
@@ -161,8 +161,8 @@ export async function listOrgMembers() {
     throw new Error('No autenticado');
   }
 
-  const userRole = (session.user as any).role;
-  const userOrgId = (session.user as any).organizationId;
+  const userRole = session.user.role;
+  const userOrgId = session.user.organizationId;
 
   if (userRole !== 'hospital_admin' && userRole !== 'super_admin') {
     throw new Error('No autorizado');

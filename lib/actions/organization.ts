@@ -16,7 +16,7 @@ export async function linkUserToOrganization(orgCode: string) {
   }
 
   // Prevent users already in an org from switching to another
-  if ((session.user as any).organizationId) {
+  if (session.user.organizationId) {
     return { error: 'Ya perteneces a una organización' };
   }
 

@@ -47,6 +47,7 @@ interface NavBarProps {
       image?: string | null;
       role?: string;
       organizationId?: string | null;
+      vendorStatus?: string | null;
     };
   } | null;
   vendorStatus?: string | null;

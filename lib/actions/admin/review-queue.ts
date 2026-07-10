@@ -15,7 +15,7 @@ async function requireSuperAdmin() {
   if (!session?.user) {
     throw new Error('No autenticado');
   }
-  if ((session.user as any).role !== 'super_admin') {
+  if (session.user.role !== 'super_admin') {
     throw new Error('Acceso denegado: se requiere rol super_admin');
   }
   return session;

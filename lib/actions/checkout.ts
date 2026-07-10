@@ -131,7 +131,7 @@ export async function createOrderFromCart(input: CheckoutInput) {
   const order = await prisma.order.create({
     data: {
       userId: session.user.id,
-      organizationId: (session.user as any).organizationId || null,
+      organizationId: session.user.organizationId || null,
       subtotalCents,
       discountCents,
       taxCents,

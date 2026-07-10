@@ -85,7 +85,7 @@ export async function generate2faSecret() {
     throw new Error('Se requiere autenticacion');
   }
 
-  if ((session.user as any).twoFactorEnabled) {
+  if (session.user.twoFactorEnabled) {
     throw new Error('Ya tienes 2FA habilitado. Desactivalo primero.');
   }
 

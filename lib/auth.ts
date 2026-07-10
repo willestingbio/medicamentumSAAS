@@ -1,6 +1,8 @@
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
+import { customSession } from 'better-auth/plugins';
 import { prisma } from './prisma';
+import type { AppUser } from './auth-types';
 
 /**
  * Better Auth server configuration.
@@ -167,6 +169,31 @@ export const auth = betterAuth({
     },
   },
 
+  plugins: [
+    customSession(async ({ user, session }) => {
+      const u = user as unknown as AppUser;
+
+      let vendorStatus: AppUser['vendorStatus'] = null;
+      try {
+        const vendor = await prisma.vendor.findUnique({
+          where: { userId: u.id },
+          select: { status: true },
+        });
+        vendorStatus = vendor?.status ?? null;
+      } catch {
+        // Si la tabla vendor no existe todavía (first deploy), ignorar
+      }
+
+      return {
+        user: {
+          ...u,
+          vendorStatus,
+        },
+        session,
+      };
+    }),
+  ],
+
   // Rate limiting: en producción VPS, migrar a Redis store cuando esté disponible
   rateLimit: {
     enabled: true,
@@ -187,5 +214,5 @@ export const auth = betterAuth({
 });
 
 // Type exports para usar en Server Components y Server Actions
-export type Session = typeof auth.$Infer.Session;
-export type User = typeof auth.$Infer.Session.user;
+export type Session = typeof auth.$Infer.Session & { user: AppUser };
+export type User = AppUser;
