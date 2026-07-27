@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dr. Medici — Medicamentum360</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(135deg,#0d0221,#1a0533,#2d0b4e,#15062b);min-height:100vh;display:flex;align-items:center;justify-content:center}
+.container{max-width:900px;width:100%;padding:1rem}
+h1{background:linear-gradient(135deg,#a855f7,#6366f1,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-size:2.2rem;text-align:center;margin-bottom:.3rem}
+.subtitle{color:#a78bfa;text-align:center;margin-bottom:1.5rem;font-size:.95rem}
+.chat-box{background:rgba(255,255,255,.04);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.1);border-radius:16px;overflow:hidden;display:flex;flex-direction:column;height:70vh;max-height:700px}
+.chat-header{background:rgba(124,58,237,.15);padding:1rem 1.2rem;display:flex;align-items:center;gap:.8rem;border-bottom:1px solid rgba(255,255,255,.08)}
+.chat-header .avatar{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#6366f1);display:flex;align-items:center;justify-content:center;font-size:1.3rem}
+.chat-header .info h3{color:#e9d5ff;font-size:.95rem}
+.chat-header .info p{color:#a78bfa;font-size:.75rem}
+.messages{flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:.8rem}
+.messages::-webkit-scrollbar{width:4px}
+.messages::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:4px}
+.msg{max-width:85%;animation:fadeIn .3s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.msg.user{align-self:flex-end}
+.msg.agent{align-self:flex-start}
+.msg .bubble{padding:.75rem 1rem;border-radius:14px;font-size:.9rem;line-height:1.5;word-break:break-word}
+.msg.user .bubble{background:#7c3aed;color:#fff;border-bottom-right-radius:4px}
+.msg.agent .bubble{background:rgba(255,255,255,.08);color:#e5e7eb;border-bottom-left-radius:4px}
+.msg .source{font-size:.7rem;color:#a78bfa;margin-top:.25rem;padding-left:.5rem}
+.typing{display:none;align-self:flex-start;padding:.5rem 1rem;color:#9ca3af;font-size:.8rem}
+.typing.active{display:block}
+.input-area{padding:.8rem 1rem;border-top:1px solid rgba(255,255,255,.08);display:flex;gap:.5rem;background:rgba(0,0,0,.2)}
+.input-area input{flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:.7rem 1rem;color:#e5e7eb;font-size:.9rem;outline:none;transition:border-color .2s}
+.input-area input:focus{border-color:#7c3aed}
+.input-area input::placeholder{color:#6b7280}
+.input-area button{background:#7c3aed;border:none;border-radius:12px;padding:.7rem 1.2rem;color:#fff;cursor:pointer;font-weight:600;font-size:.85rem;transition:background .2s}
+.input-area button:hover{background:#6d28d9}
+.input-area button:disabled{opacity:.5;cursor:not-allowed}
+.status{text-align:center;color:#6b7280;font-size:.7rem;padding:.3rem}
+.api-config{text-align:center;padding:.5rem}
+.api-config input{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:.4rem .7rem;color:#9ca3af;font-size:.75rem;width:280px;margin-right:.4rem}
+.api-config button{background:transparent;border:1px solid rgba(255,255,255,.15);color:#9ca3af;border-radius:8px;padding:.4rem .7rem;font-size:.75rem;cursor:pointer}
+@media(max-width:600px){.chat-box{height:85vh;border-radius:0}.container{padding:0}h1{font-size:1.5rem}}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>🩺 Dr. Medici</h1>
+<p class="subtitle">Asistente Virtual de Medicamentum360</p>
+<div class="api-config">
+  <input type="password" id="apiKey" placeholder="OpenAI API Key (opcional, para respuestas con IA)">
+  <button onclick="configureAPI()">Configurar</button>
+</div>
+<div class="chat-box">
+  <div class="chat-header">
+    <div class="avatar">🩺</div>
+    <div class="info"><h3>Dr. Medici</h3><p>Respuestas basadas en documentación oficial</p></div>
+  </div>
+  <div class="messages" id="messages">
+    <div class="msg agent"><div class="bubble">
+      ¡Hola! 👋 Soy <strong>Dr. Medici</strong> 🩺, tu asistente virtual de Medicamentum360.<br><br>
+      Puedo ayudarte con:<br>
+      📚 Cursos y marketplace<br>💰 Precios y reembolsos<br>🏥 Capacitación corporativa<br>
+      👨‍🏫 Cómo crear y vender tus cursos<br>🔒 Privacidad y datos<br>❓ Soporte técnico<br><br>
+      <em>¿En qué te puedo ayudar hoy?</em>
+    </div></div>
+  </div>
+  <div class="typing" id="typing">Dr. Medici está escribiendo...</div>
+  <div class="input-area">
+    <input type="text" id="userInput" placeholder="Escribe tu consulta aquí..." onkeydown="if(event.key==='Enter')sendMessage()">
+    <button onclick="sendMessage()" id="sendBtn">Enviar</button>
+  </div>
+</div>
+<div class="status" id="status">Modo: búsqueda local | <span id="sourceCount">cargando...</span></div>
+</div>
+
+<script>
+// ─── Knowledge Base (embedded chunks) ───
+const KB_CHUNKS = [];
+const API_KEY = { value: "" };
+
+// Simple tokenizer and TF-IDF scorer
+function tokenize(text) {
+  return text.toLowerCase()
+    .replace(/[^a-záéíóúüñ0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(w => w.length > 2);
+}
+
+function searchKB(query, topK = 5) {
+  const queryTokens = tokenize(query);
+  if (!queryTokens.length || !KB_CHUNKS.length) return [];
+  
+  const results = KB_CHUNKS.map(chunk => {
+    const chunkTokens = tokenize(chunk.content);
+    const matchCount = queryTokens.filter(qt => chunkTokens.includes(qt)).length;
+    const score = matchCount / Math.max(1, Math.sqrt(chunkTokens.length));
+    return { ...chunk, score };
+  });
+  
+  return results
+    .filter(r => r.score > 0.05)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK);
+}
+
+function formatAnswer(query, results) {
+  if (!results.length) {
+    return `No encontré información sobre eso en mi base de conocimiento. Te sugiero:\n\n📝 Revisar nuestra web en https://medicamentum360.com\n💬 Contactar a soporte en /soporte\n📧 Escribir a soporte@medicamentum360.com\n\n¿Hay algo más en lo que pueda ayudarte?`;
+  }
+  
+  const top = results[0];
+  let answer = top.content.trim();
+  if (answer.length > 1500) answer = answer.substring(0, 1500) + "...";
+  
+  const source = top.source;
+  answer += `\n\n*(Fuente: ${source})*`;
+  
+  if (results.length > 1) {
+    const otherSources = [...new Set(results.slice(1).map(r => r.source))];
+    if (otherSources.length) {
+      answer += `\n\n📚 También puedes consultar: ${otherSources.map(s => `**${s}**`).join(", ")}`;
+    }
+  }
+  
+  return answer;
+}
+
+async function askGPT(query, context) {
+  if (!API_KEY.value) return null;
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${API_KEY.value}` },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "Eres Dr. Medici, asistente virtual de Medicamentum360. Responde en español colombiano con tono profesional y cálido. Cita la fuente de la información. Si no encuentras la respuesta en el contexto proporcionado, dilo honestamente. Contexto:\n\n" + context },
+          { role: "user", content: query }
+        ],
+        max_tokens: 600,
+        temperature: 0.3
+      })
+    });
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || null;
+  } catch(e) { return null; }
+}
+
+function addMessage(text, sender, source) {
+  const msgs = document.getElementById("messages");
+  const div = document.createElement("div");
+  div.className = `msg ${sender}`;
+  div.innerHTML = `<div class="bubble">${text.replace(/\n/g,"<br>").replace(/\*\*(.*?)\*\*/g,"<strong>$1</strong>")}</div>`;
+  if (source) div.innerHTML += `<div class="source">${source}</div>`;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+async function sendMessage() {
+  const input = document.getElementById("userInput");
+  const btn = document.getElementById("sendBtn");
+  const query = input.value.trim();
+  if (!query) return;
+  
+  input.value = "";
+  input.disabled = true;
+  btn.disabled = true;
+  
+  addMessage(query, "user");
+  document.getElementById("typing").classList.add("active");
+  
+  // Search knowledge base
+  const results = searchKB(query, 5);
+  
+  let answer;
+  if (results.length) {
+    // Try GPT first if API key configured
+    const context = results.map(r => `[Fuente: ${r.source}]\n${r.content}`).join("\n\n");
+    const gptAnswer = await askGPT(query, context);
+    answer = gptAnswer || formatAnswer(query, results);
+  } else {
+    answer = formatAnswer(query, []);
+  }
+  
+  document.getElementById("typing").classList.remove("active");
+  addMessage(answer, "agent");
+  
+  input.disabled = false;
+  btn.disabled = false;
+  input.focus();
+  document.getElementById("status").textContent = 
+    `Modo: ${API_KEY.value ? "GPT-4o-mini" : "búsqueda local"} | ${KB_CHUNKS.length} fragmentos indexados`;
+}
+
+function configureAPI() {
+  API_KEY.value = document.getElementById("apiKey").value.trim();
+  const d = document.querySelector(".api-config");
+  d.innerHTML = API_KEY.value 
+    ? '<span style="color:#22c55e;font-size:.75rem">✓ API Key configurada — usando GPT-4o-mini</span>'
+    : '<span style="color:#9ca3af;font-size:.75rem">Sin API Key — usando búsqueda local</span>';
+  document.getElementById("status").textContent = 
+    `Modo: ${API_KEY.value ? "GPT-4o-mini" : "búsqueda local"} | ${KB_CHUNKS.length} fragmentos indexados`;
+}
+
+// ─── Load KB ───
+async function loadKB() {
+  const files = [
+    "conocimiento-producto.md",
+    "faq-soporte.md",
+    "planes-precios.md",
+    "politica-privacidad.md",
+    "terminos-uso.md"
+  ];
+  
+  let loaded = 0;
+  for (const file of files) {
+    try {
+      const res = await fetch(`/widget/kb/${file}`);
+      if (!res.ok) continue;
+      const text = await res.text();
+      const source = file.replace(".md", "");
+      // Simple chunking by paragraphs
+      const paragraphs = text.split(/\n\n+/);
+      for (const para of paragraphs) {
+        const clean = para.trim();
+        if (clean.length < 50) continue;
+        // Split long paragraphs further
+        if (clean.length > 800) {
+          const sentences = clean.split(/(?<=[.!?])\s+/);
+          let chunk = "";
+          for (const s of sentences) {
+            if ((chunk + s).length > 800 && chunk) {
+              KB_CHUNKS.push({ content: chunk.trim(), source });
+              chunk = s;
+            } else {
+              chunk += (chunk ? " " : "") + s;
+            }
+          }
+          if (chunk.trim()) KB_CHUNKS.push({ content: chunk.trim(), source });
+        } else {
+          KB_CHUNKS.push({ content: clean, source });
+        }
+      }
+      loaded++;
+    } catch(e) { console.warn("Failed to load", file, e); }
+  }
+  
+  document.getElementById("sourceCount").textContent = `${KB_CHUNKS.length} fragmentos`;
+  document.getElementById("status").textContent = 
+    `Modo: búsqueda local | ${KB_CHUNKS.length} fragmentos de ${loaded} documentos`;
+}
+
+loadKB();
+document.getElementById("userInput").focus();
+</script>
+</body>
+</html>

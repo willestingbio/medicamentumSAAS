@@ -97,6 +97,37 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <Footer />
         <CookieConsentBanner />
         <Toaster position="top-center" richColors closeButton offset={80} />
+
+        {/* 🩺 Dr. Medici — Asistente IA de Medicamentum360 */}
+        <a
+          href="/widget/dr-medici-standalone.html"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Dr. Medici — Asistente Virtual"
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '24px',
+            width: '56px',
+            height: '56px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #7c3aed, #6366f1)',
+            color: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '1.6rem',
+            boxShadow: '0 4px 20px rgba(124,58,237,0.4)',
+            zIndex: 9999,
+            textDecoration: 'none',
+            transition: 'transform 0.2s, box-shadow 0.2s',
+            cursor: 'pointer',
+          }}
+          onMouseEnter="this.style.transform='scale(1.1)';this.style.boxShadow='0 6px 28px rgba(124,58,237,0.6)'"
+          onMouseLeave="this.style.transform='scale(1)';this.style.boxShadow='0 4px 20px rgba(124,58,237,0.4)'"
+        >
+          🩺
+        </a>
       </body>
     </html>
   );
