@@ -404,25 +404,46 @@ docker exec -i medicamentum_postgres psql -U medicamentum -d medicamentum360 < m
 
 ## 19. Course Builder propio — arquitectura
 
-### 19.1 Estrategia de integración con Moodle (revisada — julio 2026)
+### 19.1 Arquitectura híbrida — Postgres como fuente de verdad, Moodle como espejo
 
-**Contexto:** el equipo de negocio quiere que Moodle sea el LMS central visible para los estudiantes, y que Medicamentum360 actúe como la capa de creación rápida encima. Es decir: los cursos deben existir en Moodle, pero se crean y gestionan desde Medicamentum360.
+**Decisión final (julio 2026):** después de evaluar la integración completa con Moodle, la arquitectura queda así:
 
-**Hallazgo técnico (verificado, junio 2026):** la Web Service API de Moodle expone:
-- ✅ `core_course_create_courses` — crear/editar/eliminar el **shell del curso** (nombre, categoría, visibilidad)
-- ✅ `core_course_get_categories` — listar categorías
-- ✅ `core_user_create_users`, `enrol_manual_enrol_users` — usuarios e inscripciones
-- ❌ **NO existe** función core para crear secciones, recursos (`mod_resource`), quizzes (`mod_quiz`) ni actividades dentro de un curso
+```
+Medicamentum360 (Course Builder)
+  │  crea contenido rápido aquí
+  │  drag & drop, video, quizzes, drip content
+  │
+  ├──► Postgres (FUENTE DE VERDAD)
+  │     módulos, lecciones, quizzes, progreso instantáneo
+  │     el estudiante consume desde el reproductor propio
+  │
+  └──► Moodle (ESPEJO de solo lectura)
+        sync de estructura vía cron
+        el shell del curso existe en Moodle
+        inscripción automática post-pago
+        SSO para quien prefiera la interfaz nativa
+        NADIE edita contenido desde Moodle
+```
 
-**Estrategia en 3 fases (documentada para roadmap, no todo se implementa ya):**
+**Por qué esta decisión (y no Moodle como fuente de verdad):**
 
-| Fase | Qué | Estado |
-|---|---|---|
-| **1. Bridge Shell** | Al crear un curso en el Course Builder, también se crea el shell en Moodle (`createMoodleCourse`) y se vincula vía `Product.moodleCourseId`. El contenido rico (lecciones, quizzes) vive en Postgres. El estudiante consume desde Medicamentum360. | ✅ Implementado (julio 2026) |
-| **2. Sync de estructura** | Sincronizar módulos como topics/sections en Moodle usando el course format nativo. El contenido se embebe vía iframe/LTI desde Medicamentum360. Así el estudiante puede navegar el curso desde Moodle también. | 📋 Pendiente |
-| **3. Plugin Moodle** | Escribir un plugin local de Moodle que exponga `create_section`, `add_resource`, `add_quiz` como web services. Esto haría que el Course Builder pueda crear TODO el contenido directamente en Moodle, eliminando la necesidad de Postgres como fuente de verdad del contenido. | 📋 Pendiente |
+1. **Velocidad de creación:** el Course Builder permite crear un curso completo (módulos, lecciones, quizzes) en minutos. Hacer lo mismo desde la UI de Moodle toma ~5x más tiempo y requiere navegar múltiples pantallas.
 
-**Decisión para hoy:** el contenido pedagógico (módulos, lecciones, video, quizzes) sigue viviendo en Postgres y sirviéndose desde el reproductor de Medicamentum360. El shell del curso **sí se crea en Moodle** automáticamente para que exista en ambos lados. El progreso y certificados se calculan en Postgres para `contentSource: native`.
+2. **Limitación técnica de Moodle:** la Web Service API no expone funciones para crear secciones, recursos ni quizzes dentro de un curso (`TRD.md §19.1 original`). Para tener integración bidireccional completa, se necesitaría un plugin de Moodle — evaluable a futuro si el negocio lo requiere.
+
+3. **Independencia:** si Moodle está caído, los estudiantes pueden seguir consumiendo cursos desde Medicamentum360. Si Postgres está caído, nada funciona — pero eso es cierto para cualquier arquitectura.
+
+4. **Features nativas:** drip content, certificación automática al 100%, auto-mark de video al 90%, quizzes con banco de preguntas — todas funcionan sin depender de la disponibilidad o capacidad de Moodle.
+
+**Qué sí hace Moodle:**
+- Recibe el shell de cada curso (`moodleCourseId`) al crearse en el Course Builder
+- Inscribe estudiantes automáticamente post-pago (`enrol_manual_enrol_users`)
+- Sirve como SSO para quien quiera ver el curso desde `lms.medicamentum360.com`
+- Para cursos `moodle_legacy`, sigue siendo la fuente de verdad del progreso (sync vía cron)
+
+**Roadmap futuro (no bloqueante):**
+- **Fase 2:** Sincronizar módulos como topics en Moodle para visibilidad desde el LMS
+- **Fase 3:** Plugin de Moodle que exponga `create_section`, `add_resource`, `add_quiz` como web services — esto habilitaría sincronización bidireccional completa si el negocio lo decide.
 
 ### 19.2 Modelo de datos — Course Builder
 

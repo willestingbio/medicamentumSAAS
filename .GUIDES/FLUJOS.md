@@ -1,6 +1,6 @@
 # FLUJOS — Medicamentum360
 **Flujos de usuario — happy path, variantes y edge cases**
-Versión: 2.0 · Fecha: 2026-06-24 · Añade Course Builder y Marketplace Multi-Vendor
+Versión: 2.1 · Fecha: 2026-06-26 · Añade compra en lote, gestión de empleados, reembolsos y soporte; corrige 2 contradicciones internas post-Course Builder
 
 > **Relación con otros documentos:** este documento describe los flujos de usuario de extremo a extremo. La especificación visual de cada pantalla está en `UX_UI.md`. La implementación técnica (Server Actions, Route Handlers, webhooks) está en `BACKEND.md`. La arquitectura de datos está en `TRD.md`.
 
@@ -13,11 +13,14 @@ Versión: 2.0 · Fecha: 2026-06-24 · Añade Course Builder y Marketplace Multi-
 3. Login
 4. Recuperación de contraseña
 5. Compra de producto (curso o VR)
+5.1 Compra corporativa en lote (hospital_admin)
 6. Post-pago → acceso a curso en Moodle
 7. Acceso a experiencia VR
 8. Carrito — guest merge al hacer login
 9. Generación y descarga de certificado
 10. Invitar empleados (hospital_admin)
+10.1 Cambiar rol y remover empleado (hospital_admin)
+10.2 Reportes de progreso de la organización
 11. Creación de producto por super_admin
 12. Vinculación con Moodle desde el panel admin (legacy)
 13. Creación de curso completo en el Course Builder
@@ -26,6 +29,8 @@ Versión: 2.0 · Fecha: 2026-06-24 · Añade Course Builder y Marketplace Multi-
 16. Onboarding de vendor y revisión editorial
 17. Venta de un producto de vendor — comisión y payout
 18. Suspensión o baja de un vendor
+19. Reembolso o cancelación de una orden
+20. Soporte y disputas del estudiante
 
 ---
 
@@ -132,20 +137,46 @@ Versión: 2.0 · Fecha: 2026-06-24 · Añade Course Builder y Marketplace Multi-
 
 ---
 
-## 6. Post-pago → acceso a curso en Moodle
+## 5.1 Compra corporativa en lote (hospital_admin) — NUEVO
+
+**Actor:** `hospital_admin` comprando cupos para su organización, no para sí mismo.
+
+> Este flujo resuelve un hueco detectado en auditoría: `EmployeeAssignment` existe en el schema desde la Fase 4 (ver `PROGRESS.md`), pero nunca hubo un checkout que realmente comprara "N cupos para mi organización" en vez de 1 acceso individual. Ver el modelo completo en `TRD.md §3.1`.
+
+**Happy path:**
+1. `hospital_admin` en el detalle de un producto (curso) ve, además del flujo normal de "Comprar ahora", un toggle "Comprar para mi organización" — visible solo si el usuario tiene `role: hospital_admin`.
+2. Al activarlo, el selector de cantidad pasa de "1" a un campo numérico libre: "¿Para cuántos empleados?" (mínimo 1).
+3. El precio total se recalcula como `precio_unitario × cantidad` (sin descuento automático por volumen en esta fase — eso queda anotado como mejora futura, ver `TRD.md §22`).
+4. Checkout idéntico al flujo 5, pero la `Order` resultante se crea con `organizationId` poblado y `quantity: N` en vez de un único `userId` comprador.
+5. Tras el pago confirmado (mismo webhook de Wompi, mismo HMAC+idempotencia del flujo 5) — **a diferencia de una compra individual, aquí NO se crea ningún `Enrollment` automáticamente.** Los N cupos quedan disponibles sin asignar.
+6. El `hospital_admin` recibe email de confirmación de compra + es redirigido a `/org/employees` con un banner: "Compraste N cupos de '[Curso]'. Asígnalos a tus empleados a continuación." en vez de la pantalla de éxito genérica del flujo 5.
+7. Desde `/org/employees`, cada empleado de la lista muestra un botón "Asignar curso" (o un selector múltiple si hay varios cupos de distintos cursos) → `assignCourseToEmployee(userId, courseId)` crea el `EmployeeAssignment` + el `Enrollment` correspondiente para ese empleado específico.
+8. El contador de "cupos disponibles sin asignar" baja en tiempo real a medida que se asignan.
+
+**Edge cases:**
+- `hospital_admin` intenta asignar más cupos de los comprados → bloqueado con mensaje "Ya asignaste todos los cupos disponibles de este curso. Compra más para seguir asignando."
+- Un empleado ya tenía acceso individual al mismo curso (lo compró con su propia tarjeta antes) → al intentar asignarle un cupo de la organización, aviso "Este empleado ya tiene acceso a este curso por cuenta propia. ¿Asignar el cupo de todas formas para que quede registrado como beneficio de la organización?" — se permite, pero se avisa, igual criterio que otros edge cases similares ya documentados en el sistema (ej. flujo 12).
+- El hospital compra cupos pero nunca los asigna → los cupos quedan "disponibles" indefinidamente, sin expiración automática en esta fase (anotado como mejora futura si el negocio decide que los cupos deben caducar).
+- Reembolso de una compra en lote después de asignar algunos cupos → ver `FLUJOS.md §19` (reembolsos), que cubre explícitamente este caso como uno de los más delicados de resolver.
+
+---
+
+## 6. Post-pago → acceso a curso
 
 **Actor:** usuario que acaba de comprar un curso.
 
+> **Arquitectura híbrida (julio 2026):** Postgres es la fuente de verdad del contenido del curso. Moodle es un mirror. El estudiante consume desde el reproductor propio de Medicamentum360. El acceso a Moodle es opcional (vía botón "Continuar en Moodle"), no la ruta primaria. Ver `TRD.md §19.1`.
+
 **Happy path:**
-1. Webhook de Wompi confirma pago → `enrol_manual_enrol_users` inscribe al usuario en Moodle.
-2. `Enrollment` creado en DB: `progressPct: 0`, `status: "not_started"`.
+1. Webhook de Wompi confirma pago → crea `Enrollment` en DB: `progressPct: 0`, `status: "not_started"`.
+2. Para cursos con `moodleCourseId` (todos los cursos nativos reciben uno automáticamente), el mismo webhook también ejecuta `enrol_manual_enrol_users` para reflejar la inscripción en Moodle — esto es una operación fire-and-forget, no bloquea la entrega del curso.
 3. Usuario en `/dashboard` → Mis Cursos → ve el nuevo curso con barra de progreso en 0%.
-4. "Empezar curso" → `POST /api/moodle/autologin` → genera autologin token de un solo uso.
-5. Redirect a `lms.medicamentum360.com/login/token.php?token=...&wantsurl=/course/view.php?id=42`.
-6. Moodle valida token → sesión iniciada → usuario ve el curso directamente.
+4. "Empezar curso" → navega a `/dashboard/cursos/[slug]` con el reproductor HLS propio de Medicamentum360 (ver flujo 14).
+5. El progreso se calcula en tiempo real desde `LessonCompletion` en Postgres, sin depender de sincronización con Moodle.
+6. Opcionalmente, el estudiante puede usar el botón "Continuar en Moodle" → `POST /api/moodle/autologin` → genera autologin token de un solo uso → redirect a Moodle. Esta ruta existe para compatibilidad SSO/institucional pero no es la ruta primaria de consumo.
 
 **Edge cases:**
-- Inscripción en Moodle falla después del pago exitoso → registrar error en log. Job de reintento automático (3 intentos con backoff exponencial). El usuario puede ver su compra en historial pero el curso aparece como "En proceso de activación" con tooltip explicativo.
+- Inscripción en Moodle falla después del pago exitoso → registrar error en log. Job de reintento automático (3 intentos con backoff exponencial). Esto **no bloquea** el acceso al curso desde Medicamentum360 — el estudiante puede consumir el contenido normalmente aunque el mirror de Moodle esté temporalmente desincronizado.
 - Token de autologin expirado (el usuario tardó en hacer clic) → generar nuevo token en el siguiente clic (no es un error que el usuario vea).
 - Usuario accede a `/dashboard` justo después del pago, antes de que llegue el webhook → skeleton loader + polling cada 5s durante máximo 30s, luego mensaje "Tu acceso se está activando, recarga en unos minutos".
 
@@ -186,7 +217,11 @@ Versión: 2.0 · Fecha: 2026-06-24 · Añade Course Builder y Marketplace Multi-
 
 **Actor:** estudiante que completó un curso.
 
-**Trigger:** Moodle reporta `progressPct = 100` vía sync (cron o webhook) → `Enrollment.status = "completed"`.
+**Trigger:**
+- **Cursos nativos** (default): `Enrollment.status = "completed"` se calcula en tiempo real en Postgres al completar la última lección/quiz obligatorio (ver flujo 14, paso 6). Sin dependencia de Moodle.
+- **Cursos `moodle_legacy`**: el progreso se sincroniza desde Moodle vía el cron de sync (`lib/moodle/sync.ts`) → `Enrollment.status = "completed"` → mismo flujo de certificación que los nativos.
+
+Una vez `Enrollment.status = "completed"`, el resto del flujo es idéntico:
 
 **Happy path:**
 1. En `/dashboard` → Mis Certificados → aparece el curso completado con botón "Generar certificado".
@@ -231,6 +266,50 @@ Versión: 2.0 · Fecha: 2026-06-24 · Añade Course Builder y Marketplace Multi-
 
 ---
 
+## 10.1 Cambiar rol y remover empleado (hospital_admin)
+
+**Actor:** usuario con rol `hospital_admin`, sobre otro empleado de su misma organización.
+
+> Este flujo resuelve un hueco real detectado en auditoría: hasta ahora el panel de empleados solo permitía invitar — no había forma de revocar acceso a alguien que dejó el hospital, lo que dejaba a ex-empleados con acceso indefinido a cursos pagados por la organización.
+
+**Happy path — cambiar rol:**
+1. En `/org/employees`, el `hospital_admin` cambia el dropdown de rol de un empleado (`Estudiante` ↔ `Administrador`).
+2. `updateEmployeeRole(userId, newRole)` (Server Action): valida que quien ejecuta es `hospital_admin`/`super_admin` de la misma `organizationId` que el empleado objetivo, y que **no** es el propio usuario cambiándose a sí mismo.
+3. Si el cambio es de `Administrador` → `Estudiante` y es el único administrador de la organización: la acción se rechaza con mensaje "Debes asignar otro administrador antes de quitarte este rol a ti mismo o a el último administrador" — una organización nunca puede quedar sin nadie que la administre.
+4. Cambio aplicado al instante, toast "Rol actualizado".
+
+**Happy path — remover empleado:**
+1. `hospital_admin` abre el menú `⋮` de un empleado → "Remover de la organización" → diálogo de confirmación explícito (`UX_UI.md §3.6.1`) detallando qué pierde el empleado.
+2. Confirma → `removeEmployeeFromOrganization(userId)` (Server Action):
+   - Verifica ownership (misma organización, ejecutor es admin).
+   - Pone `User.organizationId = null` (el usuario no se elimina de la plataforma — conserva su cuenta y cualquier compra hecha con su propio dinero).
+   - Marca como inactivos/revocados los `EmployeeAssignment` de esa organización asociados a ese usuario (ver `BACKEND.md §19` para el modelo) — esto es lo que efectivamente le quita el acceso a los cursos que la organización le había asignado.
+   - Si el empleado tenía sesión activa, su próximo acceso a una ruta de curso de la organización falla la verificación de `EmployeeAssignment` activo → se le redirige con mensaje "Ya no tienes acceso a este curso a través de tu organización."
+3. El empleado desaparece de la lista de `/org/employees`; el `hospital_admin` ve toast "Empleado removido".
+
+**Edge cases:**
+- Intentar remover al único `hospital_admin` de la organización (incluso si lo intenta otro admin) → mismo bloqueo que el cambio de rol: debe haber siempre al menos un administrador activo.
+- El empleado removido había generado certificados con cursos comprados por la organización → los certificados ya emitidos **se mantienen** (son un logro personal del empleado, no se revocan retroactivamente); solo se pierde el acceso a contenido no completado.
+- `super_admin` también puede ejecutar este flujo sobre cualquier organización, para casos de soporte donde el `hospital_admin` no puede o no debe hacerlo él mismo (ej. disputa entre el hospital y un ex-empleado).
+
+---
+
+## 10.2 Reportes de progreso de la organización
+
+**Actor:** `hospital_admin` (o `super_admin` viendo cualquier organización desde el panel admin).
+
+**Happy path:**
+1. Desde `/org/employees`, enlace "Ver reportes de progreso" → `/org/reports`.
+2. `getOrganizationProgressReport(organizationId, courseId?)` (Server Action) trae, para cada `EmployeeAssignment` activo de la organización, el `Enrollment.progressPct` correspondiente.
+3. Tabla empleado × curso × progreso (`UX_UI.md §3.6.2`), con resumen agregado (completados / promedio).
+4. "Exportar CSV" → genera el archivo en el cliente a partir de los mismos datos ya cargados (no requiere una Server Action nueva ni golpear la base de datos otra vez).
+
+**Edge cases:**
+- Organización sin compras (`EmployeeAssignment` vacío) → `EmptyState` con CTA "Explorar marketplace".
+- Empleado removido de la organización después de tener progreso → su fila desaparece del reporte en vivo (el reporte refleja el estado actual de membresía, no un histórico); si se necesita el histórico para auditoría, queda fuera del alcance de esta fase — anotar como mejora futura si un hospital lo pide explícitamente.
+
+---
+
 ## 11. Creación de producto (super_admin)
 
 **Actor:** usuario con rol `super_admin`.
@@ -250,7 +329,7 @@ Versión: 2.0 · Fecha: 2026-06-24 · Añade Course Builder y Marketplace Multi-
 - Upload de imagen falla → mensaje de error inline en el dropzone, el formulario no bloquea.
 - Slug ya existe → error inline "Esta URL ya está en uso. Elige otro slug."
 - Publicar sin imagen de portada → advertencia (no bloqueante): "Este producto no tiene imagen de portada. ¿Continuar?"
-- Publicar curso sin `moodleCourseId` → advertencia bloqueante: "Este curso no está vinculado a Moodle. Los usuarios no podrán acceder al contenido. ¿Seguro que quieres publicar?" Con opción de cancelar y vincular primero.
+- **Publicar curso `contentSource: moodle_legacy` sin `moodleCourseId`** → advertencia bloqueante: "Este curso no está vinculado a Moodle. Los usuarios no podrán acceder al contenido. ¿Seguro que quieres publicar?" Con opción de cancelar y vincular primero. **Esta validación no aplica a cursos `contentSource: native`** (el default desde la Fase 6.5) — esos se validan contra las reglas de contenido propio del Course Builder (módulo sin lecciones, video no listo, quiz sin respuesta correcta), ver `FLUJOS.md §13`. Al crear un curso nuevo desde `/admin/products`, el sistema debe decidir automáticamente `contentSource: native` salvo que el admin elija explícitamente "Vincular con Moodle" (flujo 12) — nunca dejar la elección ambigua ni mostrar ambos bloques de validación a la vez.
 
 ---
 
@@ -317,11 +396,15 @@ Versión: 2.0 · Fecha: 2026-06-24 · Añade Course Builder y Marketplace Multi-
 - El instructor cierra el navegador a mitad de edición → el autosave de campos de texto (debounce 2s) y el guardado inmediato de cambios estructurales garantizan que no se pierda trabajo más allá de los últimos 2 segundos de tecleo.
 - Dos pestañas del mismo instructor editando el mismo curso a la vez → último guardado gana (mismo patrón de "last-write-wins" ya aceptado en el resto del sistema); no se implementa lock optimista en esta fase — si se vuelve un problema real, se revisita.
 
+> **Regla de arquitectura:** el Course Builder es el **único** lugar donde se crea y edita contenido de cursos. Moodle recibe un shell mirror del curso (vía `createMoodleCourse` en `vendor-products.ts`) y mirrors de inscripción (`enrol_manual_enrol_users`), pero el contenido **nunca** se edita desde Moodle. La dirección es Postgres → Moodle, no bidireccional.
+
 ---
 
 ## 14. Consumo de un curso por el estudiante (lecciones, drip, quizzes)
 
 **Actor:** estudiante con `Enrollment` activo en un curso `contentSource: native`.
+
+> **Arquitectura híbrida:** el estudiante **siempre** consume el contenido desde el reproductor propio de Medicamentum360 (`/dashboard/cursos/[slug]/[leccionId]`), no desde Moodle. El shell de Moodle existe para compatibilidad SSO/institucional pero no es la ruta primaria de consumo. El progreso se calcula en tiempo real desde `LessonCompletion` en Postgres.
 
 **Happy path:**
 1. Desde `/dashboard` → Mis Cursos → clic en el curso → entra directo a la primera lección no completada (o la primera del curso si no ha empezado).
@@ -411,4 +494,55 @@ Versión: 2.0 · Fecha: 2026-06-24 · Añade Course Builder y Marketplace Multi-
 **Edge cases:**
 - El vendor pide reactivación tras una suspensión → vuelve a `pending_review`, requiere aprobación explícita de `super_admin` (no se reactiva automáticamente, ni siquiera si la suspensión fue a petición propia del vendor).
 - Vendor suspendido por fraude de pago (no por calidad de contenido) → además de la suspensión, se documenta como caso para revisar manualmente si corresponde retener algún `Payout` pendiente — fuera del alcance de automatizar en esta fase, requiere intervención humana caso por caso.
+
+---
+
+## 19. Reembolso o cancelación de una orden — NUEVO
+
+> Hueco crítico detectado en auditoría: `UX_UI.md §3.4` y `§3.9` muestran "política de reembolso visible" y "garantía/reembolso" en el detalle de producto y checkout, pero hasta ahora no existía ningún flujo, Server Action ni pantalla que ejecutara un reembolso real. Mostrar una promesa en la UI sin tener cómo cumplirla es peor que no mostrarla.
+
+**Actor:** estudiante solicitando reembolso; `super_admin` procesándolo.
+
+**Política de negocio asumida (a confirmar con el equipo, no soy quien decide esto):** ventana de reembolso de 7 días desde la compra, **solo si el progreso del curso es menor al 20%** — mismo criterio que usan la mayoría de plataformas de e-learning (Udemy, Platzi) para evitar abuso de "completar el curso y luego pedir el dinero de vuelta". Si el equipo de negocio decide otra política, este es el único lugar donde hay que ajustarla.
+
+**Happy path:**
+1. Estudiante en `/orders` (historial de compras) ve un botón "Solicitar reembolso" junto a una orden elegible (dentro de la ventana de 7 días y bajo el 20% de progreso).
+2. Clic → modal con motivo (dropdown: "No es lo que esperaba" / "Problema técnico" / "Compra duplicada o por error" / "Otro" + campo de texto libre) → "Enviar solicitud".
+3. `requestRefund(orderId, reason)` (Server Action):
+   - Verifica elegibilidad (ventana de tiempo + progreso) server-side — nunca confiar en que el botón solo aparece cuando es elegible, igual criterio de "nunca confiar en el cliente" ya usado para el cálculo de quizzes (`FLUJOS.md §14`).
+   - Crea `RefundRequest` con `status: pending`, vinculado a la `Order`.
+   - Notifica (Brevo) al equipo de soporte/`super_admin`.
+4. Estudiante ve su solicitud en `/orders` con estado "Reembolso solicitado — en revisión".
+5. `super_admin` revisa la solicitud en `/admin/refunds` (bandeja simple, mismo patrón visual que `/admin/review-queue`) → "Aprobar" o "Rechazar" con motivo.
+6. **Si aprueba:** `processRefund(refundRequestId)` llama a la API de reembolsos de Wompi (Wompi sí soporta reversar una transacción aprobada, a diferencia de los payouts a vendors que son transferencias nuevas) → `Order.status: refunded` → se revoca el `Enrollment`/`EmployeeAssignment` asociado (mismo mecanismo que remover un empleado, `BACKEND.md §7`) → email de confirmación al estudiante.
+7. **Si rechaza:** `RefundRequest.status: rejected` con motivo → email al estudiante explicando por qué, con la opción de contactar soporte si no está de acuerdo (ver flujo 20).
+
+**Edge cases:**
+- Orden de un producto comprado por una organización (`Order.organizationId` no nulo, ver `FLUJOS.md §5.1`) → el reembolso solo puede solicitarlo el `hospital_admin`, no un empleado individual con un cupo asignado — es la organización quien pagó y quien tiene el derecho de pedir el dinero de vuelta. El estudiante individual con un cupo asignado no ve el botón de reembolso en absoluto para ese tipo de orden.
+- Reembolso parcial de una compra en lote (ej. el hospital compró 10 cupos, solo asignó 3, quiere reembolso de los 7 sin usar) → **no soportado en esta fase** — el reembolso es de la orden completa o nada. Si el negocio necesita reembolsos parciales por cupo, es una mejora a evaluar después, no algo que deba improvisarse en el primer ciclo de este feature.
+- Progreso por encima del 20% pero el estudiante alega un problema técnico real (ej. el video nunca cargó) → el dropdown de motivo "Problema técnico" no se autoaprueba — siempre pasa por revisión humana de `super_admin`, que puede aprobar fuera de la política estándar si el reclamo es legítimo (criterio humano, no automatizado, para casos límite).
+- Producto VR comprado (sin progreso medible de la misma forma que un curso) → la elegibilidad se basa solo en la ventana de tiempo (7 días), sin el criterio de progreso — el "20% completado" no aplica a una experiencia VR redimida con un código de un solo uso. Si el código VR ya fue redimido, el reembolso pasa automáticamente a revisión manual obligatoria (no autoaprobable), porque la experiencia pudo haberse "consumido" igual sin que el sistema lo mida.
+- Doble solicitud de reembolso sobre la misma orden → bloqueado mientras haya una `RefundRequest` con `status: pending` o `approved` para esa orden.
+
+---
+
+## 20. Soporte y disputas del estudiante — NUEVO
+
+> Hueco detectado en auditoría: varios edge cases del propio documento dicen "contacta a soporte" (ej. quiz sin intentos restantes, `FLUJOS.md §14`) sin que exista ningún canal de soporte real definido. Se documenta aquí el canal mínimo viable — no un sistema de tickets completo, que sería sobre-construir para el tamaño actual del producto.
+
+**Decisión de alcance (a validar con el equipo):** en esta fase, "soporte" significa un formulario de contacto simple que crea un registro y dispara un email — no un sistema de tickets con estados, SLA, ni chat en vivo. Si el volumen de soporte crece, esto se revisita como una fase propia (candidato natural para `PLAN.md` Fase 9 — Operaciones).
+
+**Happy path:**
+1. Cualquier usuario autenticado tiene acceso a `/soporte` (enlace en el footer y en el menú de `[Avatar ▾]`).
+2. Formulario simple: categoría (dropdown: "Problema con un pago" / "Problema técnico con un curso" / "Pregunta sobre certificado" / "Otro"), asunto, descripción, y — si la categoría es "Problema con un pago" o "Problema técnico con un curso" — un selector opcional de cuál orden/curso, para que el equipo de soporte tenga contexto sin que el usuario tenga que explicarlo desde cero.
+3. `createSupportTicket(data)` (Server Action): crea `SupportTicket` con `status: open`, envía email (Brevo) al equipo de soporte con todo el contexto (incluyendo `userId`, `organizationId` si aplica, y el detalle de la orden/curso si se seleccionó).
+4. Usuario ve confirmación: "Recibimos tu mensaje. Te respondemos a [su email] en menos de 48 horas." — mismo SLA conservador que el de aprobación de vendors (`FLUJOS.md §16`), por consistencia de expectativas en toda la plataforma.
+5. El equipo responde **por email directamente** (no hay bandeja in-app de respuestas en esta fase) — el `SupportTicket` en DB existe principalmente para que `super_admin` tenga visibilidad agregada de cuántos tickets hay y de qué tipo, no para gestionar la conversación completa dentro de la plataforma.
+
+**Edge cases:**
+- Usuario no autenticado con un problema (ej. no puede completar el registro) → `/soporte` es accesible sin sesión, pero pide email manualmente en vez de tomarlo de la sesión.
+- Mismo usuario crea muchos tickets en poco tiempo (spam o frustración genuina) → mismo rate limiting ya usado para otras Server Actions públicas (`lib/rate-limit.ts`), sin bloquear por completo — un usuario genuinamente frustrado con varios problemas reales no debe quedar sin poder escribir.
+- Ticket de categoría "Problema con un pago" → además del email al equipo de soporte, se incluye automáticamente un enlace directo a la orden en el panel admin, para que quien responda no tenga que buscarla manualmente.
+
+
 

@@ -123,8 +123,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             transition: 'transform 0.2s, box-shadow 0.2s',
             cursor: 'pointer',
           }}
-          onMouseEnter="this.style.transform='scale(1.1)';this.style.boxShadow='0 6px 28px rgba(124,58,237,0.6)'"
-          onMouseLeave="this.style.transform='scale(1)';this.style.boxShadow='0 4px 20px rgba(124,58,237,0.4)'"
+          onMouseEnter={(e) => { e.currentTarget.style.transform='scale(1.1)'; e.currentTarget.style.boxShadow='0 6px 28px rgba(124,58,237,0.6)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.transform='scale(1)'; e.currentTarget.style.boxShadow='0 4px 20px rgba(124,58,237,0.4)'; }}
         >
           🩺
         </a>

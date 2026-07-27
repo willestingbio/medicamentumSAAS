@@ -1,70 +1,89 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCourseCompletion } from '@/lib/moodle/client';
+import {
+  fullSyncToMoodle,
+  quickSyncToMoodle,
+} from '@/lib/moodle/sync';
 
 /**
- * Cron: Sync Moodle Progress — POST/GET /api/cron/moodle-sync
+ * Cron: Sync Moodle — GET /api/cron/moodle-sync
  *
- * Protected by CRON_SECRET header. Designed to be called every 6 hours
- * by an external cron service (e.g., cron-job.org, Vercel Cron, or a
- * simple crontab on the VPS).
+ * Arquitectura híbrida (julio 2026):
+ *   ?mode=quick     → sync rápido Medicamentum360→Moodle (cada 3 min)
+ *   ?mode=full      → sync completo Medicamentum360→Moodle (cada hora)
+ *   ?mode=legacy    → sync inverso: leer progreso desde Moodle para
+ *                      cursos moodle_legacy (cada 6 horas)
  *
- * Iterates ALL enrollments with contentSource: 'moodle_legacy' and
- * syncs completion status from Moodle → Postgres.
+ * Protected by CRON_SECRET.
  */
-export async function POST(req: NextRequest) {
+export async function GET(req: NextRequest) {
+  const authHeader = req.headers.get('authorization');
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const mode = req.nextUrl.searchParams.get('mode') ?? 'quick';
+
   try {
-    // Validar CRON_SECRET
-    const authHeader = req.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET;
-    if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (mode === 'legacy') {
+      const results = await syncLegacyEnrollments();
+      return NextResponse.json({
+        direction: 'moodle→postgres',
+        synced: results.filter((r) => r.synced).length,
+        failed: results.filter((r) => !r.synced).length,
+        total: results.length,
+      });
     }
 
-    const results = await syncAllMoodleLegacyEnrollments();
+    if (mode === 'full') {
+      const result = await fullSyncToMoodle();
+      return NextResponse.json({
+        direction: 'postgres→moodle',
+        courses: result.courses.filter((r) => r.synced).length,
+        coursesFailed: result.courses.filter((r) => !r.synced).length,
+        enrollments: result.enrollments.filter((r) => r.synced).length,
+        enrollmentsFailed: result.enrollments.filter((r) => !r.synced).length,
+      });
+    }
 
+    // Default: quick
+    const results = await quickSyncToMoodle();
     return NextResponse.json({
+      direction: 'postgres→moodle',
+      mode: 'quick',
       synced: results.filter((r) => r.synced).length,
       failed: results.filter((r) => !r.synced).length,
       total: results.length,
-      results,
     });
   } catch (error) {
     console.error('[Cron MoodleSync] Error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
 
-export async function GET(req: NextRequest) {
-  return POST(req);
+export async function POST(req: NextRequest) {
+  return GET(req);
 }
 
 /**
- * Sync ALL moodle_legacy enrollments — no auth required (cron only).
+ * Sync progress from Moodle → Postgres for moodle_legacy courses.
+ * Solo aplica a cursos legacy vinculados a Moodle.
  */
-async function syncAllMoodleLegacyEnrollments() {
+async function syncLegacyEnrollments() {
   const enrollments = await prisma.enrollment.findMany({
     where: {
       product: {
-        course: {
-          contentSource: 'moodle_legacy',
-        },
+        course: { contentSource: 'moodle_legacy' },
       },
     },
     include: {
-      product: {
-        select: {
-          moodleCourseId: true,
-        },
-      },
-      user: {
-        select: {
-          moodleUserId: true,
-        },
-      },
+      product: { select: { moodleCourseId: true } },
+      user: { select: { moodleUserId: true } },
     },
   });
 
@@ -89,14 +108,18 @@ async function syncAllMoodleLegacyEnrollments() {
     try {
       const completion = await getCourseCompletion(
         enrollment.user.moodleUserId,
-        enrollment.product.moodleCourseId
+        enrollment.product.moodleCourseId,
       );
 
       const moodleProgress = completion?.completionstatus?.completionstate;
       const isComplete = moodleProgress === 1 || moodleProgress === 2;
 
       const newProgressPct = isComplete ? 100 : enrollment.progressPct;
-      const newStatus = isComplete ? 'completed' : enrollment.progressPct > 0 ? 'in_progress' : 'not_started';
+      const newStatus = isComplete
+        ? 'completed'
+        : enrollment.progressPct > 0
+          ? 'in_progress'
+          : 'not_started';
 
       await prisma.enrollment.update({
         where: { id: enrollment.id },

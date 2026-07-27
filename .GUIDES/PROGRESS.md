@@ -199,7 +199,7 @@ Actualizado: 2026-06-25 (Fase 4 — Carrito/Checkout completada; fixes de build/
 
 ---
 
-## Fase 6.5 — Course Builder & Marketplace Multi-Vendor — ✅ COMPLETA
+## Fase 6.5 — Course Builder & Motor de Sync Moodle & Marketplace Multi-Vendor — ✅ COMPLETA
 **Bloqueante:** Fase 4 (checkout) y Fase 5 (dashboard del estudiante) completas. No depende de la Fase 6 (Moodle) — puede desarrollarse en paralelo.
 
 > Ver `PLAN.md` Fase 6.5 para el detalle completo de tareas. Resumen de bloques principales para seguimiento rápido:
@@ -231,6 +231,9 @@ Actualizado: 2026-06-25 (Fase 4 — Carrito/Checkout completada; fixes de build/
 - [x] Componentes admin: `review-product-card.tsx`, `review-vendor-card.tsx`, `reject-dialog.tsx`, `payout-row.tsx`
 - [x] Tests Fase 6.5: `tests/phase6_5.test.ts` — 70/70 PASS (cifrado bancario, cálculo payout, review status, ownership, quizzes, progreso, video URL, comisión, idempotencia)
 - [x] TypeScript: 0 errores de compilación
+- [x] **Sync engine Moodle** (`lib/moodle/sync.ts`) — syncCourseToMoodle, syncEnrollmentToMoodle, fullSyncToMoodle, quickSyncToMoodle (dirección Postgres→Moodle)
+- [x] **Cron dual** (`/api/cron/moodle-sync`) — 3 modos: `quick` (3 min, inscripciones pendientes), `full` (1h, todo), `legacy` (6h, sync inverso para moodle_legacy)
+- [x] **Documentos actualizados:** TRD.md §19.1 arquitectura híbrida, PLAN.md Fase 6.5 renombrada, PROGRESS.md deviation #7, FLUJOS.md §§6,9,13,14
 ---
 
 ## Fase 7 — Panel de Organización (gestión real) — ⬜ No iniciada (alcance nuevo, auditoría 2026-06-26)
@@ -277,7 +280,7 @@ Actualizado: 2026-06-25 (Fase 4 — Carrito/Checkout completada; fixes de build/
 4. vanilla-cookieconsent: `guiOptions` para layout en v3.x
 5. `lib/rate-limit.ts`: in-memory, solo para Server Actions no-auth
 6. Better Auth rate limit: `storage: "memory"` (pendiente migrar a Redis en Fase 2.5 VPS)
-7. **Moodle Web Service API — estrategia revisada julio 2026:** la API de Moodle **sí** permite crear el shell del curso (`core_course_create_courses`) pero **no** secciones/recursos/quizzes. Estrategia actual: (a) El shell del curso se crea en Moodle automáticamente al crear el producto en el Course Builder, vinculando `moodleCourseId`. (b) El contenido rico (lecciones, quizzes, video) vive en Postgres y se consume desde Medicamentum360. (c) Para integración completa bidireccional futura, se necesita un plugin de Moodle que exponga `create_section`, `add_resource`, `add_quiz` como web services. Ver `TRD.md §19.1`. Fase 1 (Bridge Shell) ya implementada; Fase 2 (sync estructura) y Fase 3 (plugin) pendientes.
+7. **Arquitectura híbrida Postgres↔Moodle (julio 2026):** Postgres es la fuente de verdad del contenido (Course Builder). Moodle recibe el shell del curso (`moodleCourseId`) e inscripciones automáticas (`enrol_manual_enrol_users`). El estudiante consume desde el reproductor de Medicamentum360. El sync engine (`lib/moodle/sync.ts`) asegura que todos los cursos `native` tengan su shell en Moodle y todas las inscripciones estén reflejadas. Dirección: Postgres→Moodle. El contenido NO se edita desde Moodle. Ver `TRD.md §19.1`.
 8. Video de lecciones vía Cloudflare Stream, no R2 — R2 queda reservado a archivos estáticos (imágenes, PDFs, modelos 3D). Ver `TRD.md §19.4`.
 9. `vitest.config.ts` requiere `pool: 'threads'` explícito — el pool por defecto causaba timeout en entorno jsdom.
 10. **Auditoría 2026-06-26 — huecos de producto encontrados y resueltos en documentación** (no en código, que no estaba disponible para revisar en esta sesión): gestión de empleados sin revocación de acceso, `EmployeeAssignment` huérfano desde la Fase 4, ausencia de flujo de reembolso real pese a estar prometido en la UI desde el inicio, ausencia de canal de soporte. Ver `PLAN.md` Fase 7 y 7.1.

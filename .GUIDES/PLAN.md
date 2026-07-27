@@ -1,6 +1,8 @@
 # PLAN — Medicamentum360
-**Plan de desarrollo fasado — v4.0 (Creator Suite Edition)**
-Versión: 4.0 · Fecha: 2026-06-24 · Reemplaza v3.0
+**Plan de desarrollo fasado — v5.0 (Auditoría de Huecos Edition)**
+Versión: 5.0 · Fecha: 2026-06-26 · Reemplaza v4.0
+
+> **Cambio v5.0 vs v4.0:** auditoría completa de todos los documentos (TRD, BACKEND, UX_UI, FLUJOS, AGENTS) detectó y resolvió huecos reales de producto que existían desde antes de la v4.0: (1) ninguna forma de revocar acceso a un empleado de una organización; (2) `EmployeeAssignment` existía en el schema desde la Fase 4 sin ninguna pantalla ni lógica que lo usara — el modelo de compra corporativa en lote nunca se construyó; (3) la UI prometía "política de reembolso" desde el detalle de producto y checkout sin que existiera ningún flujo real; (4) no había canal de soporte para el estudiante, solo menciones sueltas de "contacta a soporte"; (5) dos contradicciones internas en `FLUJOS.md` quedaron de cuando se introdujo el Course Builder (v4.0) y no se propagaron a todas las secciones afectadas. Se añaden la **Fase 7 ampliada** (gestión real de organización) y la **Fase 7.1 — Reembolsos y Soporte** (nueva). Ver el detalle completo de cada hueco en las fases correspondientes y en `TRD.md §3.1` y `§21`.
 
 > **Cambio v4.0 vs v3.0:** se añade la **Fase 6.5 — Course Builder & Marketplace Multi-Vendor**, entre la Fase 6 (Integración Moodle) y la Fase 7 (Panel de Organización). Esta fase introduce el creador de cursos propio (módulos, lecciones, video con Cloudflare Stream, quizzes, certificación automática) y la apertura del marketplace a vendedores externos (instructores y estudios VR) con revisión editorial y payouts. La Fase 6 se ajusta para reflejar que Moodle pasa a ser un motor de inscripción/SSO, no el lugar donde vive el contenido — ver `TRD.md §19.1` para el detalle de por qué. El resto de fases (1-5, 7-13) permanecen funcionalmente iguales a v3.0.
 
@@ -142,7 +144,9 @@ Versión: 4.0 · Fecha: 2026-06-24 · Reemplaza v3.0
 
 ---
 
-## Fase 6.5 — Course Builder & Marketplace Multi-Vendor (NUEVO en v4.0)
+## Fase 6.5 — Course Builder & Motor de Sync Moodle & Marketplace Multi-Vendor (NUEVO en v4.0, revisado julio 2026)
+
+**Arquitectura híbrida (julio 2026):** Postgres es la fuente de verdad del contenido. El Course Builder crea cursos rápido (drag & drop, video, quizzes). Moodle recibe un espejo del shell del curso + inscripciones automáticas. El estudiante consume desde el reproductor de Medicamentum360. Ver `TRD.md §19.1`.
 
 **Bloqueante:** ✅ Fase 4 completa (ver `PROGRESS.md`) · Fase 5 completa (dashboard del estudiante, donde vive el reproductor de lección) — **único bloqueante restante**. El Course Builder en sí (creación de cursos, módulos, lecciones) no depende de Fase 5; lo que sí depende es el flujo de consumo del estudiante (§3.10 de `UX_UI.md`), porque vive dentro del dashboard. Si se quiere, el equipo puede empezar el Course Builder (creación) en paralelo a la Fase 5, y dejar el reproductor de lección para cuando ambas converjan.
 
@@ -200,9 +204,56 @@ Versión: 4.0 · Fecha: 2026-06-24 · Reemplaza v3.0
 
 ---
 
-## Fase 7 — Panel de Organización (hospital_admin)
+## Fase 7 — Panel de Organización (hospital_admin) — alcance real (auditoría 2026-06-26)
 
-*(Sin cambios de funcionalidad respecto a v2.1.)*
+> Esta fase decía "sin cambios respecto a v2.1" sin que v2.1 nunca hubiera detallado su contenido real en los documentos que tengo. Auditoría de 2026-06-26 encontró que `EmployeeAssignment` ya existe en el schema (Fase 4) sin ninguna pantalla ni Server Action que lo use, y que no existía forma de revocar acceso a un empleado. Se documenta aquí el alcance completo. Ver `TRD.md §3.1`, `BACKEND.md §7` y `§19`, `UX_UI.md §3.6.1-3.6.2` y `§3.18`, `FLUJOS.md §5.1` y `§10.1-10.2`.
+
+### Gestión de empleados (resuelve hueco crítico)
+- [ ] `updateEmployeeRole` — cambiar rol estudiante↔administrador, con protección de "nunca dejar la organización sin admin".
+- [ ] `removeEmployeeFromOrganization` — revoca `EmployeeAssignment`, preserva `Enrollment`/certificados ya emitidos.
+- [ ] UI: dropdown de rol + menú `⋮` con "Remover de la organización" + diálogo de confirmación explícito sobre el alcance exacto.
+- [ ] Test: intentar remover/descender al único admin de una organización debe fallar siempre.
+
+### Compra corporativa en lote (resuelve hueco crítico — `EmployeeAssignment` huérfano desde Fase 4)
+- [ ] Extensión de checkout: toggle "Comprar para mi organización" + cantidad de cupos, visible solo para `hospital_admin`.
+- [ ] `createBulkOrderForOrganization`, `getUnassignedSeats`, `assignCourseToEmployee`.
+- [ ] UI: banner de cupos sin asignar + acción de asignar por empleado en `/org/employees`.
+- [ ] Decisión pendiente de confirmar con negocio: estrategia de atribución de cupos a múltiples órdenes (FIFO sugerido, no decidido).
+
+### Reportes de progreso (resuelve hueco de `ProgressBar` sin pantalla)
+- [ ] `getOrganizationProgressReport` + pantalla `/org/reports` con exportación CSV.
+
+### Criterios de aceptación para marcar esta fase completa
+- Un `hospital_admin` puede remover a un empleado y verificar que pierde acceso inmediato al contenido de la organización, sin perder certificados ya obtenidos.
+- Una organización compra 5 cupos, los asigna a 3 empleados, y el panel muestra correctamente "2 cupos sin asignar".
+- Intentar dejar una organización sin administrador (por cambio de rol o remoción) falla con un mensaje claro, en todos los casos probados.
+
+---
+
+## Fase 7.1 — Reembolsos y Soporte (NUEVO, auditoría 2026-06-26)
+
+**Bloqueante:** Fase 4 completa (✅ ya lo está). Independiente de la Fase 6.5 — puede hacerse en paralelo o incluso antes, dado que resuelve una promesa de UI (`UX_UI.md §3.4`, `§3.9`) que ya está visible hoy sin estar implementada.
+
+> Hueco crítico detectado en auditoría: la plataforma muestra "política de reembolso" en el detalle de producto y el checkout desde el inicio, sin que existiera ningún flujo, Server Action, ni pantalla que lo ejecutara. Ver `TRD.md §21`, `BACKEND.md §20-21`, `UX_UI.md §3.15-3.17`, `FLUJOS.md §19-20`.
+
+### Reembolsos
+- [ ] Modelo Prisma `RefundRequest` + policy RLS.
+- [ ] `lib/refunds/policy.ts` — política de elegibilidad centralizada (7 días / 20% progreso, a confirmar con negocio antes de codificar el valor final).
+- [ ] `requestRefund`, `processRefund` (Server Actions).
+- [ ] Integración con la API de reembolsos de Wompi (confirmar que el plan de Wompi de Medicamentum360 soporta reversar transacciones, no asumirlo).
+- [ ] UI: botón de solicitud en `/orders` (§3.15), bandeja `/admin/refunds` (§3.16).
+- [ ] Revocación automática de `Enrollment`/`EmployeeAssignment` al procesar un reembolso aprobado.
+
+### Soporte
+- [ ] Modelo Prisma `SupportTicket`.
+- [ ] `createSupportTicket` (Server Action) + email de notificación al equipo.
+- [ ] Pantalla `/soporte` (§3.17), accesible con o sin sesión.
+- [ ] Enlace en footer y menú de usuario.
+
+### Criterios de aceptación
+- Un estudiante con un curso comprado hace menos de 7 días y con menos de 20% de progreso puede solicitar y recibir un reembolso de punta a punta, incluyendo la pérdida verificada de acceso al curso.
+- Un estudiante fuera de la política puede igual enviar la solicitud y un `super_admin` puede aprobarla manualmente si decide que el caso lo justifica.
+- Cualquier usuario, autenticado o no, puede enviar un ticket de soporte y el equipo recibe el email con todo el contexto necesario.
 
 ---
 
@@ -264,6 +315,7 @@ Añadir a las desviaciones ya documentadas en v2.1 §12:
 12. **`lib/prisma.ts` usa `pg.Pool({ max: 10 })`** — control explícito de conexiones a Postgres.
 13. **Moodle deja de ser el motor de contenido del curso (v4.0):** la Web Service API no soporta crear secciones/recursos/quizzes por API (verificado, ver `TRD.md §19.1`). El contenido vive en Postgres propio desde la Fase 6.5; Moodle queda como motor de inscripción/SSO para cursos legacy.
 14. **El marketplace deja de ser de un solo vendedor (v4.0):** `Product` gana `vendorId` opcional y `reviewStatus`. Todo producto de terceros pasa por revisión editorial antes de publicarse — ver `TRD.md §20.4`.
+15. **Auditoría 2026-06-26 — huecos críticos detectados y resueltos en documentación (Fase 7 y 7.1 nuevas):** `EmployeeAssignment` existía en el schema desde la Fase 4 sin ninguna Server Action/pantalla; no había forma de revocar acceso a un empleado; la UI prometía "política de reembolso" sin flujo real detrás; no existía canal de soporte. Ver el detalle completo en cada fase. Dos contradicciones internas también se corrigieron: el trigger de certificado en `FLUJOS.md §9` seguía asumiendo sync con Moodle para todos los cursos, y la validación de `moodleCourseId` en `FLUJOS.md §11` se aplicaba indistintamente a cursos `native` y `moodle_legacy`.
 
 ---
 
@@ -278,9 +330,14 @@ Fase 1✅ ──► Fase 2✅ ──► Fase 2.5~ (VPS, falta provisión real) �
                                                                               │
                                                                               ▼
                                                                           Fase 7 ──► Fase 8 ──► ... ──► Fase 13
+                                                                              │
+                                                                              ▼
+                                                                          Fase 7.1 (Reembolsos
+                                                                          + Soporte — independiente,
+                                                                          puede ir en paralelo)
 ```
 
-**Estado real (2026-06-25, ver `PROGRESS.md`):** Fases 1-4 completas en desarrollo local. Fase 2.5 sigue `~EN PROGRESO` porque el VPS real (provisión, SSL, secrets de GitHub) no se ha hecho aún — esto es una desviación de orden aceptada, no bloqueante para seguir codificando, pero **sí bloqueante para cualquier prueba de pagos reales o webhook de Wompi recibido desde producción** (ver nota en la Fase 4 más arriba). Próximo paso lógico: Fase 5 (Dashboard del Estudiante), que desbloquea por completo la Fase 6.5.
+**Estado real (2026-06-26, ver `PROGRESS.md`):** Fases 1-4 completas en desarrollo local. Fase 2.5 sigue `~EN PROGRESO` porque el VPS real (provisión, SSL, secrets de GitHub) no se ha hecho aún — esto es una desviación de orden aceptada, no bloqueante para seguir codificando, pero **sí bloqueante para cualquier prueba de pagos reales o webhook de Wompi recibido desde producción** (ver nota en la Fase 4 más arriba). Próximo paso lógico: Fase 5 (Dashboard del Estudiante), que desbloquea por completo la Fase 6.5. **La Fase 7.1 (Reembolsos y Soporte) no depende de Fase 5/6/6.5 — es candidata a priorizarse antes si el equipo de negocio considera que la promesa de reembolso ya visible en producción es un riesgo de cara al usuario real.**
 
 **Nota:** la Fase 6.5 depende de Fase 4 (✅ ya completa) y Fase 5 (no de la Fase 6 de Moodle) — puede desarrollarse en paralelo a la Fase 6 si el equipo lo prefiere, ya que el Course Builder es independiente de la integración con Moodle por diseño.
 
