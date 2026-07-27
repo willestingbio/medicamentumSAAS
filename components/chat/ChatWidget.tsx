@@ -51,13 +51,13 @@ export function ChatWidget() {
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [apiKey, setApiKey] = useState('');
-  const [showApiConfig, setShowApiConfig] = useState(false);
   const [kbLoaded, setKbLoaded] = useState(false);
   const [kbCount, setKbCount] = useState(0);
   const kbChunksRef = useRef<KbChunk[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
 
   // Load knowledge base
   useEffect(() => {
@@ -268,22 +268,11 @@ export function ChatWidget() {
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-violet-200">Dr. Medici</h3>
             <p className="text-xs text-violet-400/70 truncate">
-              {apiKey
-                ? apiKey.startsWith('sk-')
-                  ? 'GPT-4o-mini'
-                  : 'Gemini Flash'
-                : 'Búsqueda local'}
+              Gemini Flash
               {kbLoaded && ` · ${kbCount} docs`}
             </p>
           </div>
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setShowApiConfig(!showApiConfig)}
-              className="rounded-lg p-1.5 text-violet-400/60 hover:bg-white/10 hover:text-violet-300 transition-colors"
-              title="Configurar API Key"
-            >
-              <Loader2 className="size-4" />
-            </button>
             <button
               onClick={() => setOpen(false)}
               className="rounded-lg p-1.5 text-violet-400/60 hover:bg-white/10 hover:text-violet-300 transition-colors"
@@ -292,27 +281,6 @@ export function ChatWidget() {
             </button>
           </div>
         </div>
-
-        {/* API Config */}
-        {showApiConfig && (
-          <div className="border-b border-white/10 bg-white/5 px-4 py-2">
-            <div className="flex gap-2">
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="API Key (Gemini gratis: aistudio.google.com/apikey)..."
-                className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-violet-200 placeholder:text-violet-500/50 focus:border-violet-500/50 focus:outline-none"
-              />
-              <button
-                onClick={() => setShowApiConfig(false)}
-                className="rounded-lg bg-violet-600/30 px-2 py-1 text-xs text-violet-300 hover:bg-violet-600/50 transition-colors"
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
