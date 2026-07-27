@@ -135,6 +135,33 @@ export function ChatWidget() {
   const askGPT = useCallback(
     async (query: string, context: string): Promise<string | null> => {
       if (!apiKey) return null;
+
+      // Gemini (free tier) — cualquier key que no empiece con sk-
+      if (!apiKey.startsWith('sk-')) {
+        try {
+          const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{
+                  parts: [{
+                    text: `Eres Dr. Medici, asistente virtual de Medicamentum360. Responde en español colombiano con tono profesional y cálido. Cita la fuente de la información. Si no encuentras la respuesta en el contexto, dilo honestamente.\n\nContexto de la plataforma:\n${context}\n\nPregunta del usuario: ${query}`,
+                  }],
+                }],
+                generationConfig: { maxOutputTokens: 600, temperature: 0.3 },
+              }),
+            },
+          );
+          const data = await res.json();
+          return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+        } catch {
+          return null;
+        }
+      }
+
+      // OpenAI — key empieza con sk-
       try {
         const res = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
@@ -241,7 +268,11 @@ export function ChatWidget() {
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-violet-200">Dr. Medici</h3>
             <p className="text-xs text-violet-400/70 truncate">
-              {apiKey ? 'GPT-4o-mini' : 'Búsqueda local'}
+              {apiKey
+                ? apiKey.startsWith('sk-')
+                  ? 'GPT-4o-mini'
+                  : 'Gemini Flash'
+                : 'Búsqueda local'}
               {kbLoaded && ` · ${kbCount} docs`}
             </p>
           </div>
@@ -270,7 +301,7 @@ export function ChatWidget() {
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder="OpenAI API Key (opcional)"
+                placeholder="API Key (Gemini gratis: aistudio.google.com/apikey)..."
                 className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-violet-200 placeholder:text-violet-500/50 focus:border-violet-500/50 focus:outline-none"
               />
               <button
