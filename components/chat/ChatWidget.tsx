@@ -21,7 +21,7 @@ function tokenize(text: string): string[] {
     .toLowerCase()
     .replace(/[^a-záéíóúüñ0-9\s]/g, ' ')
     .split(/\s+/)
-    .filter((w) => w.length > 2);
+    .filter((w) => w.length >= 2);
 }
 
 const NO_RESULT_RESPONSE = `No encontré información sobre eso en mi base de conocimiento. Te sugiero:
@@ -32,7 +32,7 @@ const NO_RESULT_RESPONSE = `No encontré información sobre eso en mi base de co
 
 ¿Hay algo más en lo que pueda ayudarte?`;
 
-const GREETING = `¡Hola! 👋 Soy **Dr. Medici** 🩺, tu asistente virtual de Medicamentum360.
+const GREETING = `¡Hola! 👋 Soy **medicalMen** 🩺, tu asistente virtual de Medicamentum360.
 
 Puedo ayudarte con:
 📚 Cursos y marketplace
@@ -43,6 +43,16 @@ Puedo ayudarte con:
 ❓ Soporte técnico
 
 ¿En qué te puedo ayudar hoy?`;
+
+const SYSTEM_PROMPT = `Eres medicalMen, el asistente virtual de Medicamentum360, una plataforma SaaS de e-learning médico en Colombia. Responde en español colombiano con tono profesional pero cercano y cálido.
+
+Reglas:
+- Si el usuario saluda ("hola", "buenos días"), responde el saludo y preséntate brevemente.
+- Si la pregunta es sobre la plataforma, usa el contexto proporcionado para responder con precisión.
+- Siempre cita la fuente si usas información del contexto (ej: "según nuestra política de precios...").
+- Si no encuentras la respuesta en el contexto, sé honesto y sugiere contactar a soporte.
+- NUNCA inventes información que no esté en el contexto.
+- Para preguntas médicas clínicas, aclara que eres un asistente de plataforma, no un médico.`;
 
 export function ChatWidget() {
   const [open, setOpen] = useState(false);
@@ -57,11 +67,16 @@ export function ChatWidget() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+  const apiKey =
+    typeof window !== 'undefined'
+      ? (window as any).__NEXT_DATA__?.props?.pageProps?.geminiKey ||
+        process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
+        ''
+      : '';
 
   // Load knowledge base
   useEffect(() => {
-    if (kbLoaded) return;
+    if (!open || kbLoaded) return;
 
     const script = document.createElement('script');
     script.src = '/knowledge-base.js';
@@ -75,11 +90,11 @@ export function ChatWidget() {
         for (const para of paragraphs) {
           const clean = para.trim();
           if (clean.length < 50) continue;
-          if (clean.length > 800) {
+          if (clean.length > 1000) {
             const sentences = clean.split(/(?<=[.!?])\s+/);
             let chunk = '';
             for (const s of sentences) {
-              if ((chunk + s).length > 800 && chunk) {
+              if ((chunk + s).length > 1000 && chunk) {
                 chunks.push({ content: chunk.trim(), source, score: 0 });
                 chunk = s;
               } else {
@@ -99,21 +114,19 @@ export function ChatWidget() {
     document.head.appendChild(script);
 
     return () => {
-      document.head.removeChild(script);
+      if (script.parentNode) document.head.removeChild(script);
     };
-  }, [kbLoaded]);
+  }, [open, kbLoaded]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   useEffect(() => {
-    if (open) {
-      setTimeout(() => inputRef.current?.focus(), 100);
-    }
+    if (open) setTimeout(() => inputRef.current?.focus(), 150);
   }, [open]);
 
-  const searchKB = useCallback((query: string, topK = 5): KbChunk[] => {
+  const searchKB = useCallback((query: string, topK = 4): KbChunk[] => {
     const chunks = kbChunksRef.current;
     if (!query || !chunks.length) return [];
 
@@ -127,66 +140,49 @@ export function ChatWidget() {
     });
 
     return scored
-      .filter((r) => r.score > 0.05)
+      .filter((r) => r.score > 0.02)
       .sort((a, b) => b.score - a.score)
       .slice(0, topK);
   }, []);
 
-  const askGPT = useCallback(
+  const callGemini = useCallback(
     async (query: string, context: string): Promise<string | null> => {
-      if (!apiKey) return null;
+      const key = apiKey;
+      if (!key) return null;
 
-      // Gemini (free tier) — cualquier key que no empiece con sk-
-      if (!apiKey.startsWith('sk-')) {
-        try {
-          const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{
-                  parts: [{
-                    text: `Eres Dr. Medici, asistente virtual de Medicamentum360. Responde en español colombiano con tono profesional y cálido. Cita la fuente de la información. Si no encuentras la respuesta en el contexto, dilo honestamente.\n\nContexto de la plataforma:\n${context}\n\nPregunta del usuario: ${query}`,
-                  }],
-                }],
-                generationConfig: { maxOutputTokens: 600, temperature: 0.3 },
-              }),
-            },
-          );
-          const data = await res.json();
-          return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
-        } catch {
+      const prompt = `${SYSTEM_PROMPT}\n\n${
+        context
+          ? `CONTEXTO DE LA PLATAFORMA (usa esto para responder):\n${context}\n\n`
+          : ''
+      }PREGUNTA DEL USUARIO: ${query}`;
+
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { maxOutputTokens: 500, temperature: 0.4 },
+            }),
+          },
+        );
+
+        if (!res.ok) {
+          const errBody = await res.text();
+          console.warn('[Gemini] API error:', res.status, errBody.substring(0, 200));
           return null;
         }
-      }
 
-      // OpenAI — key empieza con sk-
-      try {
-        const res = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            messages: [
-              {
-                role: 'system',
-                content:
-                  'Eres Dr. Medici, asistente virtual de Medicamentum360. Responde en español colombiano con tono profesional y cálido. Cita la fuente de la información. Si no encuentras la respuesta en el contexto proporcionado, dilo honestamente. Contexto:\n\n' +
-                  context,
-              },
-              { role: 'user', content: query },
-            ],
-            max_tokens: 600,
-            temperature: 0.3,
-          }),
-        });
         const data = await res.json();
-        return data.choices?.[0]?.message?.content || null;
-      } catch {
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) {
+          console.warn('[Gemini] No text in response:', JSON.stringify(data).substring(0, 300));
+        }
+        return text || null;
+      } catch (err) {
+        console.warn('[Gemini] Network error:', err);
         return null;
       }
     },
@@ -201,31 +197,35 @@ export function ChatWidget() {
     setMessages((prev) => [...prev, { role: 'user', text: query }]);
     setLoading(true);
 
-    const results = searchKB(query, 5);
+    // Buscar contexto en la KB
+    const results = searchKB(query, 4);
+    const context = results
+      .map((r) => `[Fuente: ${r.source}]\n${r.content}`)
+      .join('\n\n');
 
     let answer: string;
     let source: string | undefined;
 
-    if (results.length > 0) {
+    // 1. Intentar Gemini SIEMPRE si hay API key (con o sin contexto KB)
+    const geminiAnswer = await callGemini(query, context);
+
+    if (geminiAnswer) {
+      answer = geminiAnswer;
+      if (results.length > 0) source = results[0].source;
+    } else if (results.length > 0) {
+      // 2. Fallback: usar KB directamente
       source = results[0].source;
-      const context = results
-        .map((r) => `[Fuente: ${r.source}]\n${r.content}`)
-        .join('\n\n');
-      const gptAnswer = await askGPT(query, context);
-      if (gptAnswer) {
-        answer = gptAnswer;
-      } else {
-        answer = results[0].content.trim();
-        if (answer.length > 1500) answer = answer.substring(0, 1500) + '...';
-        answer += `\n\n*(Fuente: ${source})*`;
-      }
+      answer = results[0].content.trim();
+      if (answer.length > 1500) answer = answer.substring(0, 1500) + '...';
+      answer += `\n\n*(Fuente: ${source})*`;
     } else {
+      // 3. Sin Gemini y sin KB → no hay respuesta
       answer = NO_RESULT_RESPONSE;
     }
 
     setMessages((prev) => [...prev, { role: 'agent', text: answer, source }]);
     setLoading(false);
-  }, [input, loading, searchKB, askGPT]);
+  }, [input, loading, searchKB, callGemini]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -236,7 +236,6 @@ export function ChatWidget() {
 
   return (
     <>
-      {/* Floating Button */}
       <button
         onClick={() => setOpen(!open)}
         className={cn(
@@ -245,41 +244,38 @@ export function ChatWidget() {
           'hover:scale-110 hover:shadow-violet-500/40',
           open && 'scale-0 opacity-0',
         )}
-        aria-label="Abrir chat con Dr. Medici"
+        aria-label="Abrir chat con medicalMen"
       >
         <Stethoscope className="size-6" />
       </button>
 
-      {/* Chat Panel */}
       <div
         className={cn(
           'fixed bottom-6 right-6 z-50 flex flex-col overflow-hidden rounded-2xl border border-white/10 shadow-2xl transition-all duration-300',
-          'bg-gradient-to-b from-[#1a0533] to-[#0d0221] backdrop-blur-xl',
+          'bg-gradient-to-b from-[#1a0533] to-[#0d0221]',
           open
-            ? 'w-[380px] h-[560px] max-w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] scale-100 opacity-100'
+            ? 'w-[390px] h-[580px] max-w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] scale-100 opacity-100'
             : 'w-0 h-0 scale-95 opacity-0 pointer-events-none',
         )}
       >
         {/* Header */}
-        <div className="flex items-center gap-3 border-b border-white/10 bg-white/5 px-4 py-3">
+        <div className="flex items-center gap-3 border-b border-white/10 bg-white/5 px-4 py-3 shrink-0">
           <div className="flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-violet-600 to-indigo-600 text-lg">
             🩺
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-semibold text-violet-200">Dr. Medici</h3>
+            <h3 className="text-sm font-semibold text-violet-200">medicalMen</h3>
             <p className="text-xs text-violet-400/70 truncate">
-              Gemini Flash
+              {apiKey ? 'Gemini Flash' : 'Búsqueda local'}
               {kbLoaded && ` · ${kbCount} docs`}
             </p>
           </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setOpen(false)}
-              className="rounded-lg p-1.5 text-violet-400/60 hover:bg-white/10 hover:text-violet-300 transition-colors"
-            >
-              <X className="size-4" />
-            </button>
-          </div>
+          <button
+            onClick={() => setOpen(false)}
+            className="rounded-lg p-1.5 text-violet-400/60 hover:bg-white/10 hover:text-violet-300 transition-colors"
+          >
+            <X className="size-4" />
+          </button>
         </div>
 
         {/* Messages */}
@@ -291,7 +287,6 @@ export function ChatWidget() {
                 'flex gap-2 text-sm',
                 msg.role === 'user' ? 'justify-end' : 'justify-start',
               )}
-              style={{ animation: 'fadeIn 0.3s ease' }}
             >
               {msg.role === 'agent' && (
                 <div className="mt-1 flex size-6 shrink-0 items-center justify-center rounded-full bg-violet-600/30 text-xs">
@@ -300,22 +295,24 @@ export function ChatWidget() {
               )}
               <div
                 className={cn(
-                  'max-w-[85%] rounded-2xl px-3.5 py-2.5 leading-relaxed',
+                  'max-w-[82%] rounded-2xl px-3.5 py-2.5 leading-relaxed',
                   msg.role === 'user'
                     ? 'bg-violet-600 text-white rounded-br-md'
                     : 'bg-white/8 text-gray-200 rounded-bl-md',
                 )}
+                style={{ animation: 'fadeIn 0.3s ease' }}
               >
                 <div
                   dangerouslySetInnerHTML={{
                     __html: msg.text
                       .replace(/\n/g, '<br>')
-                      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>'),
+                      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-violet-400 underline">$1</a>'),
                   }}
                 />
                 {msg.source && (
-                  <p className="mt-1 text-xs text-violet-400/60">
-                    Fuente: {msg.source}
+                  <p className="mt-1.5 text-xs text-violet-400/60 border-t border-white/5 pt-1.5">
+                    📄 {msg.source}
                   </p>
                 )}
               </div>
@@ -337,7 +334,7 @@ export function ChatWidget() {
         </div>
 
         {/* Input */}
-        <div className="border-t border-white/10 bg-white/5 px-3 py-3">
+        <div className="border-t border-white/10 bg-white/5 px-3 py-3 shrink-0">
           <div className="flex items-center gap-2">
             <input
               ref={inputRef}
@@ -351,7 +348,7 @@ export function ChatWidget() {
             <button
               onClick={handleSend}
               disabled={loading || !input.trim()}
-              className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white transition-all hover:bg-violet-500 disabled:opacity-40"
+              className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white transition-all hover:bg-violet-500 active:scale-95 disabled:opacity-40"
             >
               {loading ? (
                 <Loader2 className="size-4 animate-spin" />
