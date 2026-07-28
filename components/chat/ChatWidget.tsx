@@ -32,6 +32,33 @@ const NO_RESULT_RESPONSE = `No encontré información sobre eso en mi base de co
 
 ¿Hay algo más en lo que pueda ayudarte?`;
 
+// Respuestas directas para saludos y preguntas simples (sin depender de Gemini ni KB)
+function getDirectResponse(query: string): string | null {
+  const q = query.toLowerCase().trim().replace(/[!?¿¡]/g, '').replace(/\s+/g, ' ');
+
+  if (q === 'hola' || q === 'hola como estas' || q === 'buenos dias' || q === 'buenas tardes' || q === 'buenas noches' || q === 'hey' || q === 'hi') {
+    return '¡Hola! 👋 Soy medicalMen 🩺, el asistente virtual de Medicamentum360. Puedo ayudarte con información sobre cursos, marketplace, precios, reembolsos, cómo vender tus cursos y soporte técnico. ¿En qué te puedo ayudar?';
+  }
+
+  if (q === 'quien eres' || q === 'que eres' || q === 'quien sos' || q === 'como te llamas') {
+    return 'Soy **medicalMen** 🩺, el asistente virtual con IA de Medicamentum360. Mi función es ayudarte con información sobre la plataforma: cursos médicos, marketplace, precios, capacitación corporativa, cómo crear y vender cursos, privacidad y soporte técnico. Estoy potenciado por Google Gemini para darte respuestas precisas basadas en nuestra documentación oficial.';
+  }
+
+  if (q === 'gracias' || q === 'muchas gracias') {
+    return '¡De nada! 😊 ¿Hay algo más en lo que pueda ayudarte sobre Medicamentum360?';
+  }
+
+  if (q === 'adios' || q === 'chao' || q === 'hasta luego' || q === 'nos vemos') {
+    return '¡Hasta pronto! 🩺 No dudes en volver si tienes más preguntas sobre Medicamentum360.';
+  }
+
+  if (q === 'que puedes hacer' || q === 'que haces' || q === 'ayuda' || q === 'help') {
+    return 'Puedo ayudarte con:\n📚 Información sobre cursos y marketplace\n💰 Precios, pagos y reembolsos\n🏥 Capacitación corporativa para hospitales\n👨‍🏫 Cómo convertirte en vendedor (vendor)\n🔒 Privacidad de datos y seguridad\n❓ Soporte técnico\n\n¡Pregúntame lo que necesites! 🩺';
+  }
+
+  return null;
+}
+
 const GREETING = `¡Hola! 👋 Soy **medicalMen** 🩺, tu asistente virtual de Medicamentum360.
 
 Puedo ayudarte con:
@@ -67,12 +94,7 @@ export function ChatWidget() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const apiKey =
-    typeof window !== 'undefined'
-      ? (window as any).__NEXT_DATA__?.props?.pageProps?.geminiKey ||
-        process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
-        ''
-      : '';
+  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
 
   // Load knowledge base
   useEffect(() => {
@@ -206,21 +228,27 @@ export function ChatWidget() {
     let answer: string;
     let source: string | undefined;
 
-    // 1. Intentar Gemini SIEMPRE si hay API key (con o sin contexto KB)
-    const geminiAnswer = await callGemini(query, context);
-
-    if (geminiAnswer) {
-      answer = geminiAnswer;
-      if (results.length > 0) source = results[0].source;
-    } else if (results.length > 0) {
-      // 2. Fallback: usar KB directamente
-      source = results[0].source;
-      answer = results[0].content.trim();
-      if (answer.length > 1500) answer = answer.substring(0, 1500) + '...';
-      answer += `\n\n*(Fuente: ${source})*`;
+    // 0. Respuestas directas para saludos y preguntas simples (sin API ni KB)
+    const direct = getDirectResponse(query);
+    if (direct) {
+      answer = direct;
     } else {
-      // 3. Sin Gemini y sin KB → no hay respuesta
-      answer = NO_RESULT_RESPONSE;
+      // 1. Intentar Gemini SIEMPRE si hay API key
+      const geminiAnswer = await callGemini(query, context);
+
+      if (geminiAnswer) {
+        answer = geminiAnswer;
+        if (results.length > 0) source = results[0].source;
+      } else if (results.length > 0) {
+        // 2. Fallback: usar KB directamente
+        source = results[0].source;
+        answer = results[0].content.trim();
+        if (answer.length > 1500) answer = answer.substring(0, 1500) + '...';
+        answer += `\n\n*(Fuente: ${source})*`;
+      } else {
+        // 3. Sin Gemini y sin KB
+        answer = NO_RESULT_RESPONSE;
+      }
     }
 
     setMessages((prev) => [...prev, { role: 'agent', text: answer, source }]);
