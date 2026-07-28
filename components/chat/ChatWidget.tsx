@@ -169,44 +169,79 @@ export function ChatWidget() {
 
   const callGemini = useCallback(
     async (query: string, context: string): Promise<string | null> => {
-      const key = apiKey;
-      if (!key) return null;
-
       const prompt = `${SYSTEM_PROMPT}\n\n${
-        context
-          ? `CONTEXTO DE LA PLATAFORMA (usa esto para responder):\n${context}\n\n`
-          : ''
-      }PREGUNTA DEL USUARIO: ${query}`;
+        context ? `CONTEXTO:\n${context}\n\n` : ''
+      }PREGUNTA: ${query}`;
 
+      const key = apiKey;
+
+      // 1. Gemini directo (si hay key válida)
+      if (key) {
+        try {
+          const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { maxOutputTokens: 500, temperature: 0.4 },
+              }),
+            },
+          );
+          if (res.ok) {
+            const data = await res.json();
+            return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+          }
+        } catch {}
+      }
+
+      // 2. OpenRouter gratuito — sin API key
       try {
+        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://medicamentum360.com',
+          },
+          body: JSON.stringify({
+            model: 'google/gemini-2.0-flash-001',
+            messages: [
+              { role: 'system', content: SYSTEM_PROMPT },
+              { role: 'user', content: prompt },
+            ],
+            max_tokens: 500,
+            temperature: 0.4,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          return data.choices?.[0]?.message?.content || null;
+        }
+      } catch {}
+
+      // 3. HuggingFace gratuito — sin API key
+      try {
+        const hfPrompt = `<s>[INST] ${SYSTEM_PROMPT}\n\n${prompt} [/INST]`;
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+          'https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3',
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: { maxOutputTokens: 500, temperature: 0.4 },
-            }),
+            body: JSON.stringify({ inputs: hfPrompt, parameters: { max_new_tokens: 400, temperature: 0.3 } }),
           },
         );
-
-        if (!res.ok) {
-          const errBody = await res.text();
-          console.warn('[Gemini] API error:', res.status, errBody.substring(0, 200));
-          return null;
+        if (res.ok) {
+          const data = await res.json();
+          const text = Array.isArray(data) ? data[0]?.generated_text : data?.generated_text;
+          if (text) {
+            const parts = text.split('[/INST]');
+            return parts[parts.length - 1]?.trim() || null;
+          }
         }
+      } catch {}
 
-        const data = await res.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!text) {
-          console.warn('[Gemini] No text in response:', JSON.stringify(data).substring(0, 300));
-        }
-        return text || null;
-      } catch (err) {
-        console.warn('[Gemini] Network error:', err);
-        return null;
-      }
+      return null;
     },
     [apiKey],
   );
@@ -294,7 +329,7 @@ export function ChatWidget() {
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-violet-200">medicalMen</h3>
             <p className="text-xs text-violet-400/70 truncate">
-              {apiKey ? 'Gemini Flash' : 'Búsqueda local'}
+              Gemini + OpenRouter + HuggingFace
               {kbLoaded && ` · ${kbCount} docs`}
             </p>
           </div>
