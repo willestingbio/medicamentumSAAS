@@ -94,7 +94,7 @@ export function ChatWidget() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+  const apiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
 
   // Load knowledge base
   useEffect(() => {
@@ -167,79 +167,38 @@ export function ChatWidget() {
       .slice(0, topK);
   }, []);
 
-  const callGemini = useCallback(
+  const callAI = useCallback(
     async (query: string, context: string): Promise<string | null> => {
-      const prompt = `${SYSTEM_PROMPT}\n\n${
-        context ? `CONTEXTO:\n${context}\n\n` : ''
-      }PREGUNTA: ${query}`;
+      const prompt = context
+        ? `CONTEXTO DE LA PLATAFORMA (basa tu respuesta en esto):\n${context}\n\nPREGUNTA DEL USUARIO: ${query}`
+        : query;
 
       const key = apiKey;
 
-      // 1. Gemini directo (si hay key válida)
       if (key) {
         try {
-          const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { maxOutputTokens: 500, temperature: 0.4 },
-              }),
+          const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${key}`,
             },
-          );
+            body: JSON.stringify({
+              model: 'llama-3.3-70b-versatile',
+              messages: [
+                { role: 'system', content: SYSTEM_PROMPT },
+                { role: 'user', content: prompt },
+              ],
+              max_tokens: 500,
+              temperature: 0.4,
+            }),
+          });
           if (res.ok) {
             const data = await res.json();
-            return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+            return data.choices?.[0]?.message?.content || null;
           }
         } catch {}
       }
-
-      // 2. OpenRouter gratuito — sin API key
-      try {
-        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'HTTP-Referer': 'https://medicamentum360.com',
-          },
-          body: JSON.stringify({
-            model: 'google/gemini-2.0-flash-001',
-            messages: [
-              { role: 'system', content: SYSTEM_PROMPT },
-              { role: 'user', content: prompt },
-            ],
-            max_tokens: 500,
-            temperature: 0.4,
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          return data.choices?.[0]?.message?.content || null;
-        }
-      } catch {}
-
-      // 3. HuggingFace gratuito — sin API key
-      try {
-        const hfPrompt = `<s>[INST] ${SYSTEM_PROMPT}\n\n${prompt} [/INST]`;
-        const res = await fetch(
-          'https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3',
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ inputs: hfPrompt, parameters: { max_new_tokens: 400, temperature: 0.3 } }),
-          },
-        );
-        if (res.ok) {
-          const data = await res.json();
-          const text = Array.isArray(data) ? data[0]?.generated_text : data?.generated_text;
-          if (text) {
-            const parts = text.split('[/INST]');
-            return parts[parts.length - 1]?.trim() || null;
-          }
-        }
-      } catch {}
 
       return null;
     },
@@ -268,11 +227,11 @@ export function ChatWidget() {
     if (direct) {
       answer = direct;
     } else {
-      // 1. Intentar Gemini SIEMPRE si hay API key
-      const geminiAnswer = await callGemini(query, context);
+      // 1. Intentar Groq SIEMPRE si hay API key
+      const aiAnswer = await callAI(query, context);
 
-      if (geminiAnswer) {
-        answer = geminiAnswer;
+      if (aiAnswer) {
+        answer = aiAnswer;
         if (results.length > 0) source = results[0].source;
       } else if (results.length > 0) {
         // 2. Fallback: usar KB directamente
@@ -288,7 +247,7 @@ export function ChatWidget() {
 
     setMessages((prev) => [...prev, { role: 'agent', text: answer, source }]);
     setLoading(false);
-  }, [input, loading, searchKB, callGemini]);
+  }, [input, loading, searchKB, callAI]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -329,7 +288,7 @@ export function ChatWidget() {
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-violet-200">medicalMen</h3>
             <p className="text-xs text-violet-400/70 truncate">
-              Gemini + OpenRouter + HuggingFace
+              {apiKey ? 'Groq · Llama 3.3 70B' : 'Búsqueda local'}
               {kbLoaded && ` · ${kbCount} docs`}
             </p>
           </div>
